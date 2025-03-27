@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 249, 250, 251;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background-color: rgb(var(--background-rgb));
+}
+
+/* PDF generation and print styles */
+.pdf-content {
+  width: 100%;
+}
+
+/* These classes will be added via JavaScript during PDF generation */
+.pdf-clean-title {
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-clean-date {
+  font-size: 16px;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.pdf-clean-section-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pdf-clean-content {
+  margin-bottom: 1rem;
+  white-space: pre-wrap;
+}
+
+.pdf-clean-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.pdf-clean-image-container {
+  break-inside: avoid;
+}
+
+.pdf-clean-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+.pdf-clean-caption {
+  font-style: italic;
+  text-align: center;
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+}
+
+@media print {
+  .pdf-hide {
+    display: none !important;
+  }
+  
+  body {
+    background-color: white;
+  }
+  
+  input, textarea {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    width: 100%;
+    font-family: inherit;
+    font-size: inherit;
+    outline: none !important;
+  }
+  
+  .bg-white, .shadow-md, .rounded-lg {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 1rem 0 !important;
+  }
+  
+  .pdf-content {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Force page breaks between sections */
+  .pdf-section {
+    page-break-after: always;
+  }
+  
+  /* Keep images with captions together */
+  .group {
+    break-inside: avoid;
+  }
+} 
