@@ -1,9 +1,13 @@
+"use client";
+
 import React, { useState, useRef, ChangeEvent, DragEvent } from 'react';
-import { FileText, Image, Download, Plus, Trash2, ArrowUp, ArrowDown, Crop, Edit } from 'lucide-react';
+import { FileText, Image, Download, Plus, Trash2, ArrowUp, ArrowDown, Crop, Edit, Moon, Sun } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import ImageCropper from './ImageCropper';
 import { autoFitImage, resizeImage, normalizeImage, shouldProcessImage } from './ImageUtility';
+import RichTextEditor from './RichTextEditor';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface ImageItem {
   id: string;
@@ -24,6 +28,7 @@ interface Section {
 }
 
 const ReportBuilder: React.FC = () => {
+  const { theme, toggleTheme } = useTheme();
   const [reportTitle, setReportTitle] = useState<string>('Weekly Report');
   const [reportStartDate, setReportStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [reportEndDate, setReportEndDate] = useState<string>(new Date().toISOString().slice(0, 10));
@@ -63,9 +68,9 @@ const ReportBuilder: React.FC = () => {
     setSections([...sections, { 
       id: newId, 
       title: 'New Section', 
-      content: '', 
+      content: '<p></p>', // Initialize with empty paragraph for rich text
       images: [],
-      imageLayout: { imagesPerRow: 2 } // Default to 2 images per row
+      imageLayout: { imagesPerRow: 2 }
     }]);
   };
   
@@ -330,7 +335,176 @@ const ReportBuilder: React.FC = () => {
     ));
   };
   
-  // Generate PDF
+  // Replace the htmlToPlainText function with a proper HTML parsing function
+  const parseHtml = (html: string): { text: string; style: any }[] => {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    
+    const result: { text: string; style: any }[] = [];
+    
+    // Track nesting level for lists
+    let nestingLevel = 0;
+    
+    const processNode = (node: Node, currentStyle: any = {}, nestLevel: number = 0) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.textContent && node.textContent.trim()) {
+          result.push({
+            text: node.textContent,
+            style: { ...currentStyle, nestLevel }
+          });
+        }
+        return;
+      }
+      
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as HTMLElement;
+        const newStyle = { ...currentStyle };
+        let newNestLevel = nestLevel;
+        
+        // Capture more style attributes from the element for better rendering
+        if (element.style) {
+          // Check for margin/padding
+          if (element.style.marginTop) newStyle.marginTop = parseInt(element.style.marginTop);
+          if (element.style.marginBottom) newStyle.marginBottom = parseInt(element.style.marginBottom);
+          if (element.style.paddingLeft) newStyle.indent = parseInt(element.style.paddingLeft);
+          
+          // Check for text color and size
+          if (element.style.color) newStyle.color = element.style.color;
+          if (element.style.fontSize) newStyle.fontSize = parseInt(element.style.fontSize);
+          
+          // Check for line height
+          if (element.style.lineHeight) newStyle.lineHeight = parseFloat(element.style.lineHeight);
+        }
+        
+        // Process formatting
+        switch (element.tagName.toLowerCase()) {
+          case 'b':
+          case 'strong':
+            newStyle.isBold = true;
+            break;
+          case 'i':
+          case 'em':
+            newStyle.isItalic = true;
+            break;
+          case 'u':
+            newStyle.isUnderline = true;
+            break;
+          case 'p':
+            // Check for TipTap's text align attribute
+            if (element.getAttribute('data-text-align')) {
+              newStyle.align = element.getAttribute('data-text-align');
+            } else if (element.style.textAlign) {
+              newStyle.align = element.style.textAlign;
+            }
+            
+            // Add an empty line before paragraphs (except the first one)
+            // But reduce the vertical spacing
+            if (element.previousElementSibling) {
+              // Add a less aggressive line break - with minimal spacing
+              result.push({ text: '\n', style: { reducedSpacing: true } });
+            }
+            break;
+          case 'br':
+            // Handle explicit line breaks
+            result.push({ text: '\n', style: {} });
+            break;
+          case 'ul':
+            newStyle.list = 'bullet';
+            // Increase nesting level for this ul
+            newNestLevel += 1;
+            break;
+          case 'ol':
+            newStyle.list = 'ordered';
+            // Increase nesting level for this ol
+            newNestLevel += 1;
+            break;
+          case 'li':
+            newStyle.isListItem = true;
+            // Set the nesting level for the list item
+            newStyle.nestLevel = newNestLevel;
+            
+            if (newStyle.list === 'ordered' && element.parentElement) {
+              const startIndex = parseInt(element.parentElement.getAttribute('start') || '1', 10);
+              const index = Array.from(element.parentElement.children).indexOf(element);
+              newStyle.listIndex = startIndex + index;
+            }
+            break;
+          case 'h1':
+            newStyle.isHeading = true;
+            newStyle.headingLevel = 1;
+            break;
+          case 'h2':
+            newStyle.isHeading = true;
+            newStyle.headingLevel = 2;
+            break;
+          case 'h3':
+            newStyle.isHeading = true;
+            newStyle.headingLevel = 3;
+            break;
+          case 'div':
+            // Preserve div styles that might contain formatting
+            if (element.className && element.className.includes('content')) {
+              // This might be a content div with specific styling
+              if (element.style.padding) newStyle.padding = parseInt(element.style.padding);
+            }
+            break;
+        }
+        
+        // Process all child nodes with the updated style
+        for (const childNode of Array.from(node.childNodes)) {
+          processNode(childNode, newStyle, newNestLevel);
+        }
+        
+        // Add extra spacing after paragraphs and list items
+        if (['p', 'li', 'h1', 'h2', 'h3', 'div'].includes(element.tagName.toLowerCase()) && element.nextElementSibling) {
+          let spacingStyle = {};
+          
+          if (element.tagName.toLowerCase().startsWith('h')) {
+            spacingStyle = { extraSpacing: true };
+          } else if (element.tagName.toLowerCase() === 'li') {
+            // Reduce spacing between list items
+            spacingStyle = { reducedSpacing: true, nestLevel: newNestLevel };
+          } else if (element.tagName.toLowerCase() === 'p') {
+            // Standard paragraph spacing
+            spacingStyle = { reducedSpacing: element.nextElementSibling.tagName.toLowerCase() === 'p' };
+          }
+          
+          result.push({ text: '\n', style: spacingStyle });
+        }
+      }
+    };
+    
+    for (const childNode of Array.from(div.childNodes)) {
+      processNode(childNode, {}, 0);
+    }
+    
+    return result;
+  };
+  
+  // Add a more robust helper function to sanitize text before adding to PDF
+  const sanitizeTextForPDF = (text: string): string => {
+    if (!text) return '';
+    
+    // Remove all non-printable characters
+    let sanitized = text
+      // Replace specific problematic characters
+      .replace(/[%Ë]/g, '') 
+      // Remove other potentially problematic characters - anything outside standard printable range
+      .replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '')
+      // Clean whitespace
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Apply additional fixes for bullet point characters if needed
+    sanitized = sanitized
+      .replace(/•/g, '-') // Replace bullets with hyphens if somehow they ended up in content
+      .replace(/○/g, '-')
+      .replace(/■/g, '-');
+    
+    return sanitized;
+  };
+  
+  // Update the generatePDF function
   const generatePDF = async () => {
     if (!reportRef.current) return;
     
@@ -346,7 +520,7 @@ const ReportBuilder: React.FC = () => {
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
-        compress: true // Enable compression
+        compress: true
       });
       
       // PDF dimensions
@@ -354,21 +528,21 @@ const ReportBuilder: React.FC = () => {
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
       // Increase horizontal margins for better spacing
-      const margin = 10; // Increased for better spacing
+      const margin = 15; // Increased from 10 to 15 to match content container
       const contentWidth = pdfWidth - (margin * 2);
       
       // For images, allow them to take up more width
-      const imgWidth = Math.min(contentWidth, 120); // Increased for better image display
+      const imgWidth = Math.min(contentWidth, 120);
       
       // Starting position
-      let y = margin + 5;
+      let y = margin + 8;
       let currentPage = 1;
       
       // Helper to add a new page
       const addNewPage = () => {
         pdf.addPage();
         currentPage++;
-        y = margin + 5;
+        y = margin + 8;
         
         // Add page number centered at bottom
         pdf.setFont('helvetica', 'normal');
@@ -378,7 +552,7 @@ const ReportBuilder: React.FC = () => {
       };
       
       // Helper to check if we need a new page
-      const checkForNewPage = (heightNeeded: number) => {
+      const checkForNewPage = (heightNeeded: number): boolean => {
         if (y + heightNeeded > pdfHeight - margin - 10) {
           addNewPage();
           return true;
@@ -386,65 +560,24 @@ const ReportBuilder: React.FC = () => {
         return false;
       };
       
-      // Helper to compress image
-      const compressImage = async (imageUrl: string, maxWidth = 1000, quality = 0.7): Promise<string> => {
-        return new Promise((resolve) => {
-          const img = document.createElement('img');
-          img.src = imageUrl;
-          
-          img.onload = () => {
-            // Calculate new dimensions while maintaining aspect ratio
-            let newWidth = img.width;
-            let newHeight = img.height;
-            
-            if (newWidth > maxWidth) {
-              const ratio = maxWidth / newWidth;
-              newWidth = maxWidth;
-              newHeight = img.height * ratio;
-            }
-            
-            // Create a canvas to draw and compress the image
-            const canvas = document.createElement('canvas');
-            canvas.width = newWidth;
-            canvas.height = newHeight;
-            
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, newWidth, newHeight);
-              
-              // Return compressed image as data URL
-              resolve(canvas.toDataURL('image/jpeg', quality));
-            } else {
-              // If context fails, return original (fallback)
-              resolve(imageUrl);
-            }
-          };
-          
-          img.onerror = () => {
-            // If loading fails, return original (fallback)
-            resolve(imageUrl);
-          };
-        });
-      };
-      
       // Title and date with modern styling
-      // Title with more minimal font size
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
+      pdf.setFontSize(22); // Increased from 18 to match content container
       pdf.setTextColor(40, 40, 40);
       
       // Center the title
-      const titleWidth = pdf.getStringUnitWidth(reportTitle) * 18 / pdf.internal.scaleFactor;
-      pdf.text(reportTitle, pdfWidth / 2, y + 10, { align: 'center' });
-      y += 15;
+      const sanitizedTitle = sanitizeTextForPDF(reportTitle);
+      const titleWidth = pdf.getStringUnitWidth(sanitizedTitle) * 22 / pdf.internal.scaleFactor;
+      pdf.text(sanitizedTitle, pdfWidth / 2, y + 10, { align: 'center' });
+      y += 17;
       
       // Add date with more subtle styling
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
+      pdf.setFontSize(11); // Increased from 10 to match content container
       pdf.setTextColor(100, 100, 100);
       const dateText = getDateRangeText();
       pdf.text(dateText, pdfWidth / 2, y, { align: 'center' });
-      y += 15;
+      y += 20; // Increased spacing after date heading
       
       // Process sections
       for (const section of sections) {
@@ -453,32 +586,271 @@ const ReportBuilder: React.FC = () => {
         
         // Add section title - more modern, left-aligned
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(14);
+        pdf.setFontSize(16); // Increased from 14 to match content container
         pdf.setTextColor(60, 60, 60);
-        pdf.text(section.title, margin, y);
-        y += 6;
+        pdf.text(sanitizeTextForPDF(section.title), margin, y);
+        y += 12;
         
         // Add section content with better readability
-        if (section.content) {
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(10); // Smaller for better readability
-          pdf.setTextColor(70, 70, 70);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(11);
+        pdf.setTextColor(40, 40, 40);
+        
+        // Parse HTML content to preserve formatting
+        const contentItems = parseHtml(section.content);
+        
+        let currentX = margin;
+        let listItemIndex = 0;
+        let isInList = false;
+        let currentListType = '';
+        let lastItemWasList = false;
+        
+        // Process and render each content item with its style
+        for (const item of contentItems) {
+          // Check if we need a new page
+          checkForNewPage(6);
           
-          // Split text into lines
-          let textLines = pdf.splitTextToSize(section.content, contentWidth);
-          
-          // Check if we need a new page for the content
-          const textHeight = textLines.length * 4; // Slightly reduced line height
-          if (checkForNewPage(textHeight)) {
-            // If we added a new page, reset textLines with the new margins
-            textLines = pdf.splitTextToSize(section.content, contentWidth);
+          // Special handling for line breaks
+          if (item.text === '\n') {
+            // Handle different types of line breaks with appropriate spacing
+            if (item.style.extraSpacing) {
+              y += 6; // For headings
+            } else if (item.style.reducedSpacing) {
+              y += 2.5; // For paragraph breaks - increased slightly
+            } else {
+              y += 3.5; // Default line break spacing - increased
+            }
+            continue;
           }
           
-          pdf.text(textLines, margin, y);
-          y += textHeight + 5;
+          // Handle list items
+          if (item.style.isListItem) {
+            lastItemWasList = true;
+            // Reset X position for list items
+            const nestLevel = item.style.nestLevel || 0;
+            
+            // Calculate indentation based on nesting level
+            const baseIndent = margin + 5;
+            const nestIndent = nestLevel * 8; // Increased from 6 to 8 for better nesting appearance
+            
+            // Track the list state and type
+            if (currentListType !== item.style.list) {
+              currentListType = item.style.list;
+              listItemIndex = 1;
+              
+              // Add extra spacing before a new list starts (if not already in a list)
+              if (!isInList) {
+                y += 2; // Add a small gap before starting a new list
+                isInList = true;
+              }
+            }
+            
+            if (item.style.list === 'bullet') {
+              // Position for bullet point
+              const bulletX = margin + nestIndent;
+              
+              // Set consistent font for bullet
+              pdf.setFont('helvetica', 'normal');
+              pdf.setTextColor(0, 0, 0);
+              pdf.setFontSize(11);
+              
+              // Draw bullet point
+              pdf.text("•", bulletX, y);
+              
+              // Set text position with proper spacing (8mm after bullet)
+              currentX = bulletX + 8;
+            } else if (item.style.list === 'ordered') {
+              // Position for number
+              const numberX = margin + nestIndent;
+              
+              // Determine prefix format based on nesting level
+              let prefix;
+              if (nestLevel === 0) {
+                // Top level - 1. 2. 3.
+                prefix = `${listItemIndex}.`;
+              } else if (nestLevel === 1) {
+                // Second level - a) b) c)
+                prefix = `${String.fromCharCode(96 + listItemIndex)})`;
+              } else {
+                // Third level - i. ii. iii.
+                prefix = `${romanize(listItemIndex)}.`;
+              }
+              
+              // Draw the number/prefix
+              pdf.setFont('helvetica', 'normal');
+              pdf.setTextColor(0, 0, 0);
+              pdf.setFontSize(11);
+              pdf.text(prefix, numberX, y);
+              
+              // Update for next ordered item
+              listItemIndex++;
+              
+              // Set text position with proper spacing (depends on prefix length)
+              const prefixWidth = pdf.getStringUnitWidth(prefix) * pdf.getFontSize() / pdf.internal.scaleFactor;
+              currentX = numberX + prefixWidth + 2; // Add 2mm spacing after prefix
+            }
+            
+            // Restore original styling for the actual text content
+            if (item.style.isBold) {
+              pdf.setFont('helvetica', 'bold');
+            } else {
+              pdf.setFont('helvetica', 'normal');
+            }
+            
+            if (item.style.isHeading) {
+              const headingSizes: Record<number, number> = { 1: 16, 2: 14, 3: 12 };
+              const level = item.style.headingLevel || 1;
+              pdf.setFontSize(headingSizes[level] || 11);
+            } else if (item.style.fontSize) {
+              pdf.setFontSize(Math.min(Math.max(item.style.fontSize, 8), 20));
+            } else {
+              pdf.setFontSize(11);
+            }
+            
+            if (item.style.isItalic && item.style.isBold) {
+              pdf.setFont('helvetica', 'bolditalic');
+            } else if (item.style.isItalic) {
+              pdf.setFont('helvetica', 'italic');
+            }
+            
+            // Process and draw the text content
+            const text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
+            
+            // Calculate available width for text
+            const availableWidth = contentWidth - (currentX - margin);
+            
+            // Split text to fit within available width
+            const lines = pdf.splitTextToSize(text, availableWidth);
+            
+            // Setup alignment options (list items are typically left-aligned)
+            const textOptions: any = {};
+            
+            // Draw the first line aligned with the bullet/number
+            if (lines.length > 0) {
+              pdf.text(lines[0], currentX, y, textOptions);
+              
+              // If there are more lines, draw them with proper spacing
+              if (lines.length > 1) {
+                const lineSpacing = item.style.lineHeight 
+                  ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
+                  : (pdf.getFontSize() * 0.55); // Increased for better readability
+                
+                for (let i = 1; i < lines.length; i++) {
+                  y += lineSpacing;
+                  pdf.text(lines[i], currentX, y, textOptions);
+                }
+              }
+              
+              // Add spacing after the list item
+              const lineSpacing = item.style.lineHeight 
+                ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
+                : (pdf.getFontSize() * 0.55); // Increased from 0.45
+              
+              y += lineSpacing * 1.2; // Better spacing for list items
+            }
+            
+            // Skip regular text drawing since we've handled it here
+            continue;
+          } else {
+            // Reset for non-list content
+            if (lastItemWasList) {
+              // Add extra spacing after the end of a list
+              y += 4;
+              isInList = false;
+              lastItemWasList = false;
+            }
+            
+            currentX = item.style.indent ? margin + (item.style.indent / 5) : margin;
+            currentListType = '';
+          }
+          
+          // Handle text alignment
+          let xPos = currentX;
+          if (item.style.align === 'center') {
+            xPos = pdfWidth / 2;
+          } else if (item.style.align === 'right') {
+            xPos = pdfWidth - margin;
+          }
+          
+          // Apply margin/padding spacing
+          if (item.style.marginTop) {
+            y += item.style.marginTop / 3.5; // Better conversion from px to mm
+          }
+          
+          // Process the text with proper sanitization
+          const text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
+          
+          // Calculate available width for text
+          const availableWidth = contentWidth - (currentX - margin);
+          
+          // Split text to fit the available width
+          const lines = pdf.splitTextToSize(text, availableWidth);
+          
+          // Setup alignment options
+          const textOptions: any = {};
+          if (item.style.align === 'center') {
+            textOptions.align = 'center';
+          } else if (item.style.align === 'right') {
+            textOptions.align = 'right';
+          }
+          
+          // Draw the first line at the same Y position as the bullet
+          if (lines.length > 0) {
+            pdf.text(lines[0], currentX, y, textOptions);
+            
+            // If there are more lines, draw them with proper spacing
+            if (lines.length > 1) {
+              const lineSpacing = item.style.lineHeight 
+                ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
+                : (pdf.getFontSize() * 0.55); // Better line spacing that matches content
+              
+              for (let i = 1; i < lines.length; i++) {
+                y += lineSpacing;
+                pdf.text(lines[i], currentX, y, textOptions);
+              }
+            }
+            
+            // Increment Y position after the text based on line count
+            if (lines.length === 1) {
+              y += pdf.getFontSize() * 0.55; // Increase spacing after single line items
+            }
+            
+            // Skip the standard text drawing
+            continue;
+          }
+          
+          // Add underline if needed (draw immediately after the text)
+          if (item.style.isUnderline && text.trim()) {
+            const textWidth = pdf.getStringUnitWidth(text) * pdf.getFontSize() / pdf.internal.scaleFactor;
+            let underlineX = xPos;
+            
+            if (item.style.align === 'center') {
+              underlineX = (pdfWidth / 2) - (textWidth / 2);
+            } else if (item.style.align === 'right') {
+              underlineX = pdfWidth - margin - textWidth;
+            }
+            
+            pdf.line(underlineX, y + 1, underlineX + textWidth, y + 1);
+          }
+          
+          // Calculate line spacing based on style or use default
+          const lineSpacing = item.style.lineHeight 
+            ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
+            : (pdf.getFontSize() * 0.55); // Increased for better readability
+          
+          // Increase y position based on number of lines and line spacing
+          y += lineSpacing * Math.max(1, lines.length);
+          
+          // Apply margin bottom spacing
+          if (item.style.marginBottom) {
+            y += item.style.marginBottom / 4; // Better conversion from px to mm
+          }
         }
         
-        // Add images with better layout
+        // Add spacing after content
+        y += 7;
+        
+        // Process images if any
         if (section.images.length > 0) {
           // Handle multirow image layouts in PDF
           const imagesPerRow = section.imageLayout.imagesPerRow;
@@ -490,7 +862,7 @@ const ReportBuilder: React.FC = () => {
             const rowImages = section.images.slice(startIdx, endIdx);
             
             // Calculate image width based on images per row
-            const imageSpacing = 4; // mm - slightly more spacing
+            const imageSpacing = 5; // Increased from 4 for better spacing between images
             const totalSpacing = (imagesPerRow - 1) * imageSpacing;
             const availableWidth = contentWidth - totalSpacing;
             
@@ -500,16 +872,16 @@ const ReportBuilder: React.FC = () => {
             
             if (imagesPerRow === 1) {
               // For single image layout - center and make larger but not full width
-              singleImageWidth = Math.min(availableWidth * 0.8, 120); // 80% of available width up to 120mm
-              imageHeight = 70; // Taller for single image
+              singleImageWidth = Math.min(availableWidth * 0.85, 130); // Increased width for single images
+              imageHeight = 75; // Increased height for single image
             } else if (imagesPerRow === 2) {
               // For two image layout - make each image narrower to prevent overlap
-              singleImageWidth = Math.min(availableWidth / 2 - 8, 90); // Larger images with adequate spacing
-              imageHeight = 60; // Increase height even more for two-image layout
+              singleImageWidth = Math.min(availableWidth / 2 - 6, 95); // Adjusted width for two images
+              imageHeight = 65; // Increased height for two-image layout
             } else {
               // For three image layout
               singleImageWidth = availableWidth / 3;
-              imageHeight = 40;
+              imageHeight = 45; // Increased from 40
             }
             
             // Special handling for different layouts
@@ -603,10 +975,10 @@ const ReportBuilder: React.FC = () => {
                       
                       // Add caption if it exists
                       if (image.caption) {
-                        const captionY = y + imgHeight + 3; // Increased spacing between image and caption
+                        const captionY = y + imgHeight + 3.5; // Increased spacing between image and caption
                         pdf.setFont('helvetica', 'italic');
-                        pdf.setFontSize(8);
-                        pdf.setTextColor(120, 120, 120);
+                        pdf.setFontSize(9); // Increased from 8 for better readability
+                        pdf.setTextColor(100, 100, 100); // Lighter gray for captions
                         
                         // Center the caption under the image
                         pdf.text(
@@ -646,13 +1018,13 @@ const ReportBuilder: React.FC = () => {
             }
             
             // Move down for next row of images
-            const rowHeight = imageHeight + (rowImages.some(img => img.caption) ? 8 : 0);
-            y += rowHeight + 5; // Add more space between rows
+            const rowHeight = imageHeight + (rowImages.some(img => img.caption) ? 10 : 0); // Increased caption space
+            y += rowHeight + 8; // More space between image rows
           }
         }
         
         // Add some space after each section
-        y += 8;
+        y += 7; // Consistent spacing between sections
       }
       
       // Add page number to the first page
@@ -662,30 +1034,71 @@ const ReportBuilder: React.FC = () => {
       pdf.setTextColor(150, 150, 150);
       pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - margin, { align: 'center' });
       
-      // Save the PDF with optimization
-      const filename = `${reportTitle.replace(/\s+/g, '_')}_${reportStartDate}_${reportEndDate !== reportStartDate ? reportEndDate : ''}.pdf`;
-      pdf.save(filename);
+      // Save the PDF
+      pdf.save('report.pdf');
       
-      // Remove loading toast
-      document.body.removeChild(loadingToast);
-      
-      // Show success message
-      const successToast = document.createElement('div');
-      successToast.innerText = 'PDF generated successfully!';
-      successToast.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50';
-      document.body.appendChild(successToast);
-      
-      // Remove success toast after 3 seconds
-      setTimeout(() => {
-        document.body.removeChild(successToast);
-      }, 3000);
-      
+      // Remove loading message
+      loadingToast.remove();
     } catch (error) {
       console.error('Error generating PDF:', error);
-      
-      // Show error message
-      alert(`Error generating PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert('Error generating PDF. Please try again.');
     }
+  };
+  
+  // Helper to compress image
+  const compressImage = async (imageUrl: string, maxWidth = 1000, quality = 0.7): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = document.createElement('img');
+      img.src = imageUrl;
+      
+      img.onload = () => {
+        // Calculate new dimensions while maintaining aspect ratio
+        let newWidth = img.width;
+        let newHeight = img.height;
+        
+        if (newWidth > maxWidth) {
+          const ratio = maxWidth / newWidth;
+          newWidth = maxWidth;
+          newHeight = img.height * ratio;
+        }
+        
+        // Create a canvas to draw and compress the image
+        const canvas = document.createElement('canvas');
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, newWidth, newHeight);
+          
+          // Return compressed image as data URL
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } else {
+          // If context fails, return original (fallback)
+          resolve(imageUrl);
+        }
+      };
+      
+      img.onerror = () => {
+        // If loading fails, return original (fallback)
+        resolve(imageUrl);
+      };
+    });
+  };
+  
+  // Add helper function to convert numbers to Roman numerals
+  const romanize = (num: number): string => {
+    if (isNaN(num)) return "";
+    const digits = String(+num).split("");
+    const key = ["","C","CC","CCC","CD","D","DC","DCC","DCCC","CM",
+                 "","X","XX","XXX","XL","L","LX","LXX","LXXX","XC",
+                 "","I","II","III","IV","V","VI","VII","VIII","IX"];
+    let roman = "";
+    let i = 3;
+    while (i--) {
+      roman = (key[+digits.pop()! + (i * 10)] || "") + roman;
+    }
+    return Array(+digits.join("") + 1).join("M") + roman;
   };
   
   return (
@@ -717,32 +1130,42 @@ const ReportBuilder: React.FC = () => {
       )}
       
       <main className="container mx-auto py-8 px-4 max-w-4xl">
-        <div className="bg-white shadow-sm rounded-lg p-6 mb-6" ref={reportRef}>
+        <div className="bg-white dark:bg-slate-800 shadow-sm rounded-lg p-6 mb-6" ref={reportRef}>
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Report Builder</h1>
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+              title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            >
+              {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+            </button>
+          </div>
           <div className="mb-6">
             <input
               type="text"
               value={reportTitle}
               onChange={(e) => setReportTitle(e.target.value)}
-              className="w-full text-3xl font-bold border-none focus:outline-none focus:ring-0"
+              className="w-full p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md text-2xl font-bold mb-2"
               placeholder="Report Title"
             />
-            <div className="flex space-x-4 mt-2">
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Start Date</label>
+            <div className="flex gap-4 items-center mt-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400">Start Date:</label>
                 <input
                   type="date"
                   value={reportStartDate}
                   onChange={(e) => setReportStartDate(e.target.value)}
-                  className="border border-gray-200 rounded-md p-1 text-sm"
+                  className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
                 />
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">End Date</label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500 dark:text-gray-400">End Date:</label>
                 <input
                   type="date"
                   value={reportEndDate}
                   onChange={(e) => setReportEndDate(e.target.value)}
-                  className="border border-gray-200 rounded-md p-1 text-sm"
+                  className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
                 />
               </div>
             </div>
@@ -752,30 +1175,39 @@ const ReportBuilder: React.FC = () => {
             <div key={section.id} className="mb-8 pb-6 border-b border-gray-100">
               <div className="flex items-start justify-between mb-3">
                 <div className="flex-1">
-                  <input
-                    type="text"
-                    value={section.title}
-                    onChange={(e) => handleTitleChange(section.id, e.target.value)}
-                    className="w-full text-xl font-semibold border-none focus:outline-none focus:ring-0"
-                    placeholder="Section Title"
-                  />
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-1 pdf-hide mb-2">
+                      <button
+                        onClick={() => moveSectionUp(section.id)}
+                        className="p-1 text-gray-400 hover:text-gray-600"
+                        title="Move section up"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => moveSectionDown(section.id)}
+                        className="p-1 text-gray-400 hover:text-gray-600"
+                        title="Move section down"
+                      >
+                        <ArrowDown className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={section.title}
+                      onChange={(e) => handleTitleChange(section.id, e.target.value)}
+                      className="w-full p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md text-lg font-semibold mb-2"
+                      placeholder="Section title..."
+                    />
+                    <RichTextEditor
+                      content={section.content}
+                      onChange={(content) => handleContentChange(section.id, content)}
+                      placeholder="Write your content here..."
+                    />
+                  </div>
                 </div>
                 
                 <div className="flex items-center space-x-1 pdf-hide">
-                  <button
-                    onClick={() => moveSectionUp(section.id)}
-                    className="p-1 text-gray-400 hover:text-gray-600"
-                    title="Move section up"
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => moveSectionDown(section.id)}
-                    className="p-1 text-gray-400 hover:text-gray-600"
-                    title="Move section down"
-                  >
-                    <ArrowDown className="h-4 w-4" />
-                  </button>
                   {sections.length > 1 && (
                     <button
                       onClick={() => removeSection(section.id)}
@@ -786,15 +1218,6 @@ const ReportBuilder: React.FC = () => {
                     </button>
                   )}
                 </div>
-              </div>
-              
-              <div className="mb-3">
-                <textarea
-                  value={section.content}
-                  onChange={(e) => handleContentChange(section.id, e.target.value)}
-                  className="w-full p-2 border border-gray-200 rounded-md h-24 text-sm"
-                  placeholder="Write your content here..."
-                />
               </div>
               
               {section.images.length === 0 && (
