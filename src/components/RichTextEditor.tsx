@@ -192,7 +192,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Bold"
         >
-          <Bold className="h-4 w-4" />
+          <Bold className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={() => editor.chain().focus().toggleItalic().run()}
@@ -201,7 +201,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Italic"
         >
-          <Italic className="h-4 w-4" />
+          <Italic className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={() => editor.chain().focus().toggleUnderline().run()}
@@ -210,7 +210,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Underline"
         >
-          <UnderlineIcon className="h-4 w-4" />
+          <UnderlineIcon className="h-4 w-4" suppressHydrationWarning />
         </button>
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
         <button
@@ -220,7 +220,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Align Left"
         >
-          <AlignLeft className="h-4 w-4" />
+          <AlignLeft className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={() => editor.chain().focus().setTextAlign('center').run()}
@@ -229,7 +229,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Align Center"
         >
-          <AlignCenter className="h-4 w-4" />
+          <AlignCenter className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={() => editor.chain().focus().setTextAlign('right').run()}
@@ -238,7 +238,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Align Right"
         >
-          <AlignRight className="h-4 w-4" />
+          <AlignRight className="h-4 w-4" suppressHydrationWarning />
         </button>
         <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
         <button
@@ -248,7 +248,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Bullet List"
         >
-          <List className="h-4 w-4" />
+          <List className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
@@ -257,7 +257,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
             : 'hover:bg-gray-100 dark:hover:bg-slate-700 dark:text-gray-300'}`}
           title="Numbered List"
         >
-          <ListOrdered className="h-4 w-4" />
+          <ListOrdered className="h-4 w-4" suppressHydrationWarning />
         </button>
         
         {/* Add new indent/outdent buttons */}
@@ -272,7 +272,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
           } dark:text-gray-300`}
           title="Indent (Create Subbullet)"
         >
-          <Indent className="h-4 w-4" />
+          <Indent className="h-4 w-4" suppressHydrationWarning />
         </button>
         <button
           onClick={handleOutdent}
@@ -284,10 +284,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
           } dark:text-gray-300`}
           title="Outdent"
         >
-          <Outdent className="h-4 w-4" />
+          <Outdent className="h-4 w-4" suppressHydrationWarning />
         </button>
       </div>
-      <EditorContent editor={editor} />
+      <EditorContent editor={editor} className={`${theme === 'dark' ? 'dark-editor' : ''}`} />
       
       {showPasteOptions && (
         <div 
@@ -325,7 +325,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
               onClick={() => setShowIndentHint(false)}
               className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" suppressHydrationWarning />
             </button>
           </div>
           <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">

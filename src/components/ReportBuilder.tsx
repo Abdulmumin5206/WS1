@@ -348,9 +348,19 @@ const ReportBuilder: React.FC = () => {
     const processNode = (node: Node, currentStyle: any = {}, nestLevel: number = 0) => {
       if (node.nodeType === Node.TEXT_NODE) {
         if (node.textContent && node.textContent.trim()) {
+          // Check if this is text inside a list item - preserve raw content
+          const isInListItem = node.parentElement && 
+            (node.parentElement.tagName.toLowerCase() === 'li' || 
+             (node.parentElement.parentElement && node.parentElement.parentElement.tagName.toLowerCase() === 'li'));
+          
+          // If it's text inside a list item, mark it with a special flag
           result.push({
             text: node.textContent,
-            style: { ...currentStyle, nestLevel }
+            style: { 
+              ...currentStyle, 
+              nestLevel,
+              isRawListContent: isInListItem
+            }
           });
         }
         return;
@@ -390,6 +400,15 @@ const ReportBuilder: React.FC = () => {
             newStyle.isUnderline = true;
             break;
           case 'p':
+            // Detect if the paragraph contains bullet-like characters and treat it as a list item
+            if (element.textContent?.trimStart().startsWith('•') || 
+                element.textContent?.trimStart().startsWith('-') || 
+                element.textContent?.trimStart().startsWith('○') || 
+                element.textContent?.trimStart().startsWith('■')) {
+              newStyle.list = 'bullet';
+              newStyle.isListItem = true;
+            }
+            
             // Check for TipTap's text align attribute
             if (element.getAttribute('data-text-align')) {
               newStyle.align = element.getAttribute('data-text-align');
@@ -410,16 +429,28 @@ const ReportBuilder: React.FC = () => {
             break;
           case 'ul':
             newStyle.list = 'bullet';
+            // Add a marker to ensure bullet visibility in the PDF
+            newStyle.forceBullet = true;
             // Increase nesting level for this ul
             newNestLevel += 1;
             break;
           case 'ol':
             newStyle.list = 'ordered';
+            // Ensure numbers are used regardless of level
+            newStyle.forceNumbers = true;
             // Increase nesting level for this ol
             newNestLevel += 1;
             break;
           case 'li':
             newStyle.isListItem = true;
+            // For copy-pasted content, ensure we can detect bullet points
+            if (element.textContent?.trimStart().startsWith('•') || 
+                element.textContent?.trimStart().startsWith('-') || 
+                element.textContent?.trimStart().startsWith('○') || 
+                element.textContent?.trimStart().startsWith('■')) {
+              newStyle.list = 'bullet';
+              newStyle.forceBullet = true;
+            }
             // Set the nesting level for the list item
             newStyle.nestLevel = newNestLevel;
             
@@ -455,21 +486,26 @@ const ReportBuilder: React.FC = () => {
           processNode(childNode, newStyle, newNestLevel);
         }
         
-        // Add extra spacing after paragraphs and list items
-        if (['p', 'li', 'h1', 'h2', 'h3', 'div'].includes(element.tagName.toLowerCase()) && element.nextElementSibling) {
+        // Add extra spacing after paragraphs and list items - but avoid extra spacing for list items
+        if (['p', 'h1', 'h2', 'h3', 'div'].includes(element.tagName.toLowerCase()) && element.nextElementSibling) {
           let spacingStyle = {};
           
           if (element.tagName.toLowerCase().startsWith('h')) {
             spacingStyle = { extraSpacing: true };
-          } else if (element.tagName.toLowerCase() === 'li') {
-            // Reduce spacing between list items
-            spacingStyle = { reducedSpacing: true, nestLevel: newNestLevel };
           } else if (element.tagName.toLowerCase() === 'p') {
             // Standard paragraph spacing
             spacingStyle = { reducedSpacing: element.nextElementSibling.tagName.toLowerCase() === 'p' };
           }
           
           result.push({ text: '\n', style: spacingStyle });
+        }
+        // Special handling for list items - only add line break if it's not the last item in a list
+        else if (element.tagName.toLowerCase() === 'li' && element.nextElementSibling) {
+          // Add minimal spacing between list items
+          const isLastItem = !element.nextElementSibling;
+          if (!isLastItem) {
+            result.push({ text: '\n', style: { reducedSpacing: true, nestLevel: newNestLevel, isList: true } });
+          }
         }
       }
     };
@@ -527,33 +563,50 @@ const ReportBuilder: React.FC = () => {
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       
-      // Increase horizontal margins for better spacing
-      const margin = 15; // Increased from 10 to 15 to match content container
-      const contentWidth = pdfWidth - (margin * 2);
+      // Standard spacing values - consistent system
+      const SPACING = {
+        MARGIN: 15,                 // Page margin
+        TITLE_AFTER: 12,            // Space after main title
+        DATE_AFTER: 10,             // Space after date
+        SECTION_TITLE_AFTER: 3,     // Space after section titles
+        PARAGRAPH_AFTER: 3,         // Standard paragraph spacing
+        LIST_ITEM_AFTER: 2,         // Space after list items
+        LIST_INDENT_BASE: 3,        // Base list indentation
+        LIST_INDENT_LEVEL: 5,       // Indentation per nesting level
+        LIST_BULLET_TEXT_GAP: 5,    // Gap between bullet and text
+        LIST_NUMBER_TEXT_GAP: 2,    // Gap between number and text
+        HEADING_AFTER: 5,           // Space after headings
+        IMAGE_GAP: 3,               // Gap between images
+        IMAGE_ROW_AFTER: 5,         // Space after image row
+        SECTION_AFTER: 5            // Space after each section
+      };
+      
+      // Calculate content width based on margins
+      const contentWidth = pdfWidth - (SPACING.MARGIN * 2);
       
       // For images, allow them to take up more width
       const imgWidth = Math.min(contentWidth, 120);
       
       // Starting position
-      let y = margin + 8;
+      let y = SPACING.MARGIN + 8;
       let currentPage = 1;
       
       // Helper to add a new page
       const addNewPage = () => {
         pdf.addPage();
         currentPage++;
-        y = margin + 8;
+        y = SPACING.MARGIN + 8;
         
         // Add page number centered at bottom
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(9);
         pdf.setTextColor(150, 150, 150);
-        pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - margin, { align: 'center' });
+        pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - SPACING.MARGIN, { align: 'center' });
       };
       
       // Helper to check if we need a new page
       const checkForNewPage = (heightNeeded: number): boolean => {
-        if (y + heightNeeded > pdfHeight - margin - 10) {
+        if (y + heightNeeded > pdfHeight - SPACING.MARGIN - 10) {
           addNewPage();
           return true;
         }
@@ -562,22 +615,22 @@ const ReportBuilder: React.FC = () => {
       
       // Title and date with modern styling
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(22); // Increased from 18 to match content container
+      pdf.setFontSize(22);
       pdf.setTextColor(40, 40, 40);
       
       // Center the title
       const sanitizedTitle = sanitizeTextForPDF(reportTitle);
       const titleWidth = pdf.getStringUnitWidth(sanitizedTitle) * 22 / pdf.internal.scaleFactor;
       pdf.text(sanitizedTitle, pdfWidth / 2, y + 10, { align: 'center' });
-      y += 17;
+      y += SPACING.TITLE_AFTER;
       
       // Add date with more subtle styling
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(11); // Increased from 10 to match content container
+      pdf.setFontSize(11);
       pdf.setTextColor(100, 100, 100);
       const dateText = getDateRangeText();
       pdf.text(dateText, pdfWidth / 2, y, { align: 'center' });
-      y += 20; // Increased spacing after date heading
+      y += SPACING.DATE_AFTER;
       
       // Process sections
       for (const section of sections) {
@@ -586,10 +639,10 @@ const ReportBuilder: React.FC = () => {
         
         // Add section title - more modern, left-aligned
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(16); // Increased from 14 to match content container
+        pdf.setFontSize(16);
         pdf.setTextColor(60, 60, 60);
-        pdf.text(sanitizeTextForPDF(section.title), margin, y);
-        y += 12;
+        pdf.text(sanitizeTextForPDF(section.title), SPACING.MARGIN, y);
+        y += SPACING.SECTION_TITLE_AFTER;
         
         // Add section content with better readability
         pdf.setFont('helvetica', 'normal');
@@ -599,7 +652,7 @@ const ReportBuilder: React.FC = () => {
         // Parse HTML content to preserve formatting
         const contentItems = parseHtml(section.content);
         
-        let currentX = margin;
+        let currentX = SPACING.MARGIN;
         let listItemIndex = 0;
         let isInList = false;
         let currentListType = '';
@@ -614,11 +667,16 @@ const ReportBuilder: React.FC = () => {
           if (item.text === '\n') {
             // Handle different types of line breaks with appropriate spacing
             if (item.style.extraSpacing) {
-              y += 6; // For headings
+              y += SPACING.HEADING_AFTER; // Heading spacing
             } else if (item.style.reducedSpacing) {
-              y += 2.5; // For paragraph breaks - increased slightly
+              // Different spacing for list vs paragraph breaks
+              if (item.style.isList) {
+                y += SPACING.LIST_ITEM_AFTER / 2; // Reduced spacing for list items
+              } else {
+                y += SPACING.PARAGRAPH_AFTER; // Standard paragraph spacing
+              }
             } else {
-              y += 3.5; // Default line break spacing - increased
+              y += SPACING.PARAGRAPH_AFTER; // Default line break spacing
             }
             continue;
           }
@@ -630,8 +688,8 @@ const ReportBuilder: React.FC = () => {
             const nestLevel = item.style.nestLevel || 0;
             
             // Calculate indentation based on nesting level
-            const baseIndent = margin + 5;
-            const nestIndent = nestLevel * 8; // Increased from 6 to 8 for better nesting appearance
+            const baseIndent = SPACING.MARGIN + SPACING.LIST_INDENT_BASE;
+            const nestIndent = nestLevel * SPACING.LIST_INDENT_LEVEL;
             
             // Track the list state and type
             if (currentListType !== item.style.list) {
@@ -640,41 +698,31 @@ const ReportBuilder: React.FC = () => {
               
               // Add extra spacing before a new list starts (if not already in a list)
               if (!isInList) {
-                y += 2; // Add a small gap before starting a new list
+                y += SPACING.LIST_ITEM_AFTER / 2;
                 isInList = true;
               }
             }
             
             if (item.style.list === 'bullet') {
               // Position for bullet point
-              const bulletX = margin + nestIndent;
+              const bulletX = SPACING.MARGIN + nestIndent;
               
               // Set consistent font for bullet
               pdf.setFont('helvetica', 'normal');
               pdf.setTextColor(0, 0, 0);
               pdf.setFontSize(11);
               
-              // Draw bullet point
+              // Always draw the bullet for consistency
               pdf.text("•", bulletX, y);
               
-              // Set text position with proper spacing (8mm after bullet)
-              currentX = bulletX + 8;
+              // Set text position with proper spacing
+              currentX = bulletX + SPACING.LIST_BULLET_TEXT_GAP;
             } else if (item.style.list === 'ordered') {
               // Position for number
-              const numberX = margin + nestIndent;
+              const numberX = SPACING.MARGIN + nestIndent;
               
-              // Determine prefix format based on nesting level
-              let prefix;
-              if (nestLevel === 0) {
-                // Top level - 1. 2. 3.
-                prefix = `${listItemIndex}.`;
-              } else if (nestLevel === 1) {
-                // Second level - a) b) c)
-                prefix = `${String.fromCharCode(96 + listItemIndex)})`;
-              } else {
-                // Third level - i. ii. iii.
-                prefix = `${romanize(listItemIndex)}.`;
-              }
+              // Always use numeric format regardless of nesting level
+              const prefix = `${listItemIndex}.`;
               
               // Draw the number/prefix
               pdf.setFont('helvetica', 'normal');
@@ -687,7 +735,21 @@ const ReportBuilder: React.FC = () => {
               
               // Set text position with proper spacing (depends on prefix length)
               const prefixWidth = pdf.getStringUnitWidth(prefix) * pdf.getFontSize() / pdf.internal.scaleFactor;
-              currentX = numberX + prefixWidth + 2; // Add 2mm spacing after prefix
+              currentX = numberX + prefixWidth + SPACING.LIST_NUMBER_TEXT_GAP;
+            }
+            
+            // Process and draw the text content
+            let text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
+            
+            // Remove any leading bullet or dash characters if in a bullet list
+            const hasExistingBullet = item.text.trimStart().startsWith('•') || 
+                                    item.text.trimStart().startsWith('-') || 
+                                    item.text.trimStart().startsWith('○') ||
+                                    item.text.trimStart().startsWith('■') ||
+                                    (item.style.isRawListContent || false);
+                                    
+            if (hasExistingBullet && item.style.list === 'bullet') {
+              text = text.replace(/^[\s\u00A0]*[•\-○■][\s\u00A0]*/m, '');
             }
             
             // Restore original styling for the actual text content
@@ -713,14 +775,18 @@ const ReportBuilder: React.FC = () => {
               pdf.setFont('helvetica', 'italic');
             }
             
-            // Process and draw the text content
-            const text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
-            
             // Calculate available width for text
-            const availableWidth = contentWidth - (currentX - margin);
+            const availableWidth = contentWidth - (currentX - SPACING.MARGIN);
             
-            // Split text to fit within available width
-            const lines = pdf.splitTextToSize(text, availableWidth);
+            // Modify the text handling to better preserve line breaks and prevent unwanted line splits
+            let lines;
+            if (item.style.list === 'bullet' && !text.includes('\n')) {
+              // For bullet list items without explicit newlines, render text on a single line
+              lines = [text];
+            } else {
+              // For bullet lists, ensure we maintain proper line wrapping
+              lines = pdf.splitTextToSize(text, availableWidth);
+            }
             
             // Setup alignment options (list items are typically left-aligned)
             const textOptions: any = {};
@@ -733,7 +799,7 @@ const ReportBuilder: React.FC = () => {
               if (lines.length > 1) {
                 const lineSpacing = item.style.lineHeight 
                   ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
-                  : (pdf.getFontSize() * 0.55); // Increased for better readability
+                  : (pdf.getFontSize() * 0.8); // Increased spacing for better readability of multi-line content
                 
                 for (let i = 1; i < lines.length; i++) {
                   y += lineSpacing;
@@ -741,12 +807,22 @@ const ReportBuilder: React.FC = () => {
                 }
               }
               
-              // Add spacing after the list item
+              // Add spacing after the list item - only add extra spacing if needed
+              // Calculate appropriate line spacing based on text length and content
               const lineSpacing = item.style.lineHeight 
-                ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
-                : (pdf.getFontSize() * 0.55); // Increased from 0.45
+                ? (item.style.lineHeight * pdf.getFontSize() / 2.5) 
+                : (pdf.getFontSize() * (lines.length > 1 ? 0.8 : 0.6)); // Adjust spacing based on number of lines
               
-              y += lineSpacing * 1.2; // Better spacing for list items
+              // Use different spacing based on text length:
+              // - Short text (likely a single line): minimal spacing
+              // - Longer text: more spacing to separate from next item
+              if (text.length < 40) {
+                // Short text gets minimal spacing
+                y += lineSpacing * 0.8;
+              } else {
+                // Longer text gets more spacing
+                y += lineSpacing * 1.2;
+              }
             }
             
             // Skip regular text drawing since we've handled it here
@@ -755,12 +831,12 @@ const ReportBuilder: React.FC = () => {
             // Reset for non-list content
             if (lastItemWasList) {
               // Add extra spacing after the end of a list
-              y += 4;
+              y += SPACING.LIST_ITEM_AFTER;
               isInList = false;
               lastItemWasList = false;
             }
             
-            currentX = item.style.indent ? margin + (item.style.indent / 5) : margin;
+            currentX = item.style.indent ? SPACING.MARGIN + (item.style.indent / 5) : SPACING.MARGIN;
             currentListType = '';
           }
           
@@ -769,7 +845,7 @@ const ReportBuilder: React.FC = () => {
           if (item.style.align === 'center') {
             xPos = pdfWidth / 2;
           } else if (item.style.align === 'right') {
-            xPos = pdfWidth - margin;
+            xPos = pdfWidth - SPACING.MARGIN;
           }
           
           // Apply margin/padding spacing
@@ -778,13 +854,24 @@ const ReportBuilder: React.FC = () => {
           }
           
           // Process the text with proper sanitization
-          const text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
+          let text = item.text === '\n' ? ' ' : sanitizeTextForPDF(item.text);
+          
+          // Check for and remove any bullet points in normal text to prevent confusion
+          // (Sometimes bullets may be in non-list content due to copy-paste)
+          if (!item.style.isListItem) {
+            // Remove any bullet points at the beginning of lines
+            text = text.replace(/^[\s\u00A0]*[•\-○■][\s\u00A0]*/m, '');
+          }
           
           // Calculate available width for text
-          const availableWidth = contentWidth - (currentX - margin);
+          const availableWidth = contentWidth - (currentX - SPACING.MARGIN);
           
-          // Split text to fit the available width
-          const lines = pdf.splitTextToSize(text, availableWidth);
+          // Modify the text handling to better preserve line breaks and prevent unwanted line splits
+          // Don't split text that should remain on one line
+          const shouldPreserveSingleLine = text.length < 70 && !text.includes('\n');
+          const lines = shouldPreserveSingleLine 
+            ? [text] // Keep short text on a single line
+            : pdf.splitTextToSize(text, availableWidth);
           
           // Setup alignment options
           const textOptions: any = {};
@@ -802,7 +889,7 @@ const ReportBuilder: React.FC = () => {
             if (lines.length > 1) {
               const lineSpacing = item.style.lineHeight 
                 ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
-                : (pdf.getFontSize() * 0.55); // Better line spacing that matches content
+                : (pdf.getFontSize() * 0.8); // Increased spacing for better readability of multi-line content
               
               for (let i = 1; i < lines.length; i++) {
                 y += lineSpacing;
@@ -812,10 +899,15 @@ const ReportBuilder: React.FC = () => {
             
             // Increment Y position after the text based on line count
             if (lines.length === 1) {
-              y += pdf.getFontSize() * 0.55; // Increase spacing after single line items
+              y += pdf.getFontSize() * 0.8; // Consistent spacing after single line items
+            } else {
+              // For multi-line text, add slightly more space
+              y += pdf.getFontSize() * 0.5;
             }
-            
-            // Skip the standard text drawing
+          }
+          
+          // If this was list content, skip the regular text handling below
+          if (item.style.list) {
             continue;
           }
           
@@ -827,7 +919,7 @@ const ReportBuilder: React.FC = () => {
             if (item.style.align === 'center') {
               underlineX = (pdfWidth / 2) - (textWidth / 2);
             } else if (item.style.align === 'right') {
-              underlineX = pdfWidth - margin - textWidth;
+              underlineX = pdfWidth - SPACING.MARGIN - textWidth;
             }
             
             pdf.line(underlineX, y + 1, underlineX + textWidth, y + 1);
@@ -836,7 +928,7 @@ const ReportBuilder: React.FC = () => {
           // Calculate line spacing based on style or use default
           const lineSpacing = item.style.lineHeight 
             ? (item.style.lineHeight * pdf.getFontSize() / 2.5) // Match content container line height
-            : (pdf.getFontSize() * 0.55); // Increased for better readability
+            : (pdf.getFontSize() * 0.8); // Increased spacing for better readability of multi-line content
           
           // Increase y position based on number of lines and line spacing
           y += lineSpacing * Math.max(1, lines.length);
@@ -848,7 +940,7 @@ const ReportBuilder: React.FC = () => {
         }
         
         // Add spacing after content
-        y += 7;
+        y += SPACING.SECTION_AFTER;
         
         // Process images if any
         if (section.images.length > 0) {
@@ -862,7 +954,7 @@ const ReportBuilder: React.FC = () => {
             const rowImages = section.images.slice(startIdx, endIdx);
             
             // Calculate image width based on images per row
-            const imageSpacing = 5; // Increased from 4 for better spacing between images
+            const imageSpacing = SPACING.IMAGE_GAP;
             const totalSpacing = (imagesPerRow - 1) * imageSpacing;
             const availableWidth = contentWidth - totalSpacing;
             
@@ -895,7 +987,7 @@ const ReportBuilder: React.FC = () => {
               const gapBetween = Math.max(remainingSpace * 0.5, 12); // Use 50% of remaining space for gap, minimum 12mm
               
               // Calculate the left edge of the first image - distribute remaining space evenly
-              const leftStart = margin + (contentWidth - totalWidth - gapBetween) / 2;
+              const leftStart = SPACING.MARGIN + (contentWidth - totalWidth - gapBetween) / 2;
               
               // Store positions for both images
               xPositions = [
@@ -908,9 +1000,9 @@ const ReportBuilder: React.FC = () => {
             } else if (rowImages.length < imagesPerRow && imagesPerRow > 1) {
               // Center the row for other layouts
               const actualTotalWidth = (rowImages.length * singleImageWidth) + ((rowImages.length - 1) * imageSpacing);
-              xPos = margin + (contentWidth - actualTotalWidth) / 2;
+              xPos = SPACING.MARGIN + (contentWidth - actualTotalWidth) / 2;
             } else {
-              xPos = margin;
+              xPos = SPACING.MARGIN;
             }
             
             // Check if we need a new page for the image row
@@ -923,9 +1015,9 @@ const ReportBuilder: React.FC = () => {
               } else if (rowImages.length < imagesPerRow && imagesPerRow > 1) {
                 // Center the row for other layouts
                 const actualTotalWidth = (rowImages.length * singleImageWidth) + ((rowImages.length - 1) * imageSpacing);
-                xPos = margin + (contentWidth - actualTotalWidth) / 2;
+                xPos = SPACING.MARGIN + (contentWidth - actualTotalWidth) / 2;
               } else {
-                xPos = margin;
+                xPos = SPACING.MARGIN;
               }
             }
             
@@ -955,7 +1047,7 @@ const ReportBuilder: React.FC = () => {
                         // Re-center the image horizontally if width changed
                         if (imagesPerRow === 1 || (imagesPerRow === 2 && rowImages.length === 1)) {
                           // For single image layout or a single image in a two-image row
-                          xPos = (xPos === margin) ? margin + (contentWidth - imgWidth) / 2 : xPos;
+                          xPos = (xPos === SPACING.MARGIN) ? SPACING.MARGIN + (contentWidth - imgWidth) / 2 : xPos;
                         }
                       }
                       
@@ -975,10 +1067,10 @@ const ReportBuilder: React.FC = () => {
                       
                       // Add caption if it exists
                       if (image.caption) {
-                        const captionY = y + imgHeight + 3.5; // Increased spacing between image and caption
+                        const captionY = y + imgHeight + 2;
                         pdf.setFont('helvetica', 'italic');
-                        pdf.setFontSize(9); // Increased from 8 for better readability
-                        pdf.setTextColor(100, 100, 100); // Lighter gray for captions
+                        pdf.setFontSize(9);
+                        pdf.setTextColor(100, 100, 100);
                         
                         // Center the caption under the image
                         pdf.text(
@@ -1018,13 +1110,10 @@ const ReportBuilder: React.FC = () => {
             }
             
             // Move down for next row of images
-            const rowHeight = imageHeight + (rowImages.some(img => img.caption) ? 10 : 0); // Increased caption space
-            y += rowHeight + 8; // More space between image rows
+            const rowHeight = imageHeight + (rowImages.some(img => img.caption) ? 6 : 0);
+            y += rowHeight + SPACING.IMAGE_ROW_AFTER;
           }
         }
-        
-        // Add some space after each section
-        y += 7; // Consistent spacing between sections
       }
       
       // Add page number to the first page
@@ -1032,7 +1121,7 @@ const ReportBuilder: React.FC = () => {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(150, 150, 150);
-      pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - margin, { align: 'center' });
+      pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - SPACING.MARGIN, { align: 'center' });
       
       // Save the PDF
       pdf.save('report.pdf');
@@ -1138,7 +1227,7 @@ const ReportBuilder: React.FC = () => {
               className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
               title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
             >
-              {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+              {theme === 'light' ? <Moon className="h-5 w-5" suppressHydrationWarning /> : <Sun className="h-5 w-5" suppressHydrationWarning />}
             </button>
           </div>
           <div className="mb-6">
@@ -1182,14 +1271,14 @@ const ReportBuilder: React.FC = () => {
                         className="p-1 text-gray-400 hover:text-gray-600"
                         title="Move section up"
                       >
-                        <ArrowUp className="h-4 w-4" />
+                        <ArrowUp className="h-4 w-4" suppressHydrationWarning />
                       </button>
                       <button
                         onClick={() => moveSectionDown(section.id)}
                         className="p-1 text-gray-400 hover:text-gray-600"
                         title="Move section down"
                       >
-                        <ArrowDown className="h-4 w-4" />
+                        <ArrowDown className="h-4 w-4" suppressHydrationWarning />
                       </button>
                     </div>
                     <input
@@ -1214,7 +1303,7 @@ const ReportBuilder: React.FC = () => {
                       className="p-1 text-gray-400 hover:text-red-500"
                       title="Remove section"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" suppressHydrationWarning />
                     </button>
                   )}
                 </div>
@@ -1235,7 +1324,7 @@ const ReportBuilder: React.FC = () => {
                     }
                   }}
                 >
-                  <Image className="h-10 w-10 text-gray-300 mb-3" />
+                  <Image className="h-10 w-10 text-gray-300 mb-3" suppressHydrationWarning />
                   <p className="text-sm text-gray-500 mb-1">Drop images here or click to upload</p>
                   <p className="text-xs text-gray-400">The images will appear in your report</p>
                 </div>
@@ -1257,7 +1346,7 @@ const ReportBuilder: React.FC = () => {
                           }`}
                           title="Single image layout"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" suppressHydrationWarning>
                             <rect x="3" y="6" width="14" height="8" rx="1" />
                           </svg>
                         </button>
@@ -1269,11 +1358,10 @@ const ReportBuilder: React.FC = () => {
                               ? 'bg-blue-600 text-white' 
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
-                          title="Two images per row"
+                          title="Two image layout"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <rect x="2" y="6" width="7" height="8" rx="1" />
-                            <rect x="11" y="6" width="7" height="8" rx="1" />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" suppressHydrationWarning>
+                            <rect x="3" y="6" width="14" height="8" rx="1" />
                           </svg>
                         </button>
                         <button
@@ -1284,156 +1372,13 @@ const ReportBuilder: React.FC = () => {
                               ? 'bg-blue-600 text-white' 
                               : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                           }`}
-                          title="Three images per row"
+                          title="Three image layout"
                         >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <rect x="1" y="6" width="5" height="8" rx="1" />
-                            <rect x="7.5" y="6" width="5" height="8" rx="1" />
-                            <rect x="14" y="6" width="5" height="8" rx="1" />
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" suppressHydrationWarning>
+                            <rect x="3" y="6" width="14" height="8" rx="1" />
                           </svg>
-                        </button>
+                        </button>,
                       </div>
-                    </div>
-                    <span className="text-xs text-gray-500">{section.images.length} image{section.images.length !== 1 ? 's' : ''}</span>
-                  </div>
-                </div>
-              )}
-              
-              {section.images.length > 0 && (
-                <div className="mt-4 flex justify-center w-full">
-                  <div 
-                    className={`grid ${
-                      section.imageLayout.imagesPerRow === 1 
-                        ? 'gap-6' 
-                        : section.imageLayout.imagesPerRow === 2 
-                          ? 'gap-10' 
-                          : 'gap-4'
-                    }`}
-                    style={{
-                      gridTemplateColumns: 
-                        section.imageLayout.imagesPerRow === 1 
-                          ? '1fr' 
-                          : section.imageLayout.imagesPerRow === 2 
-                            ? '1fr 1fr' 
-                            : 'repeat(3, minmax(0, 1fr))',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      maxWidth: section.imageLayout.imagesPerRow === 1 
-                        ? '85%'
-                        : section.imageLayout.imagesPerRow === 2 
-                          ? '90%' 
-                          : '98%',
-                      margin: 'auto',
-                      width: section.imageLayout.imagesPerRow === 3 ? '100%' : 'auto'
-                    }}
-                  >
-                    {section.images.map((image) => (
-                      <div 
-                        key={image.id} 
-                        className={`relative flex flex-col items-center ${
-                          section.imageLayout.imagesPerRow === 1 
-                            ? 'w-[95%]'
-                            : section.imageLayout.imagesPerRow === 2 
-                              ? 'w-[95%]' 
-                              : 'w-full'
-                        } group mx-auto`}
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center'
-                        }}
-                      >
-                        <div 
-                          className="relative overflow-hidden rounded-md bg-white w-full"
-                          style={{
-                            aspectRatio: section.imageLayout.imagesPerRow === 1 ? '16/9' : section.imageLayout.imagesPerRow === 2 ? '4/3' : '1/1',
-                            maxHeight: section.imageLayout.imagesPerRow === 1 
-                              ? '450px'
-                              : section.imageLayout.imagesPerRow === 2 
-                                ? '300px' 
-                                : '280px',
-                            width: section.imageLayout.imagesPerRow === 3 ? '100%' : 'auto',
-                            margin: '0 auto',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center'
-                          }}
-                        >
-                          <img
-                            src={image.url}
-                            alt={image.caption || "Report image"}
-                            className={`${
-                              section.imageLayout.imagesPerRow === 3
-                                ? 'object-cover w-full h-full transition-transform duration-200 hover:scale-105' // For 3-image layout, fill the container with hover effect
-                                : 'object-contain max-h-full max-w-full' // For 1 and 2-image layouts, contain within
-                            }`}
-                            style={section.imageLayout.imagesPerRow === 3 ? { objectFit: 'cover', width: '100%', height: '100%' } : {}}
-                          />
-                          
-                          {/* Edit overlay */}
-                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black bg-opacity-40 transition-opacity pdf-hide">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => startCropImage(section.id, image.id)}
-                                className="p-2 bg-white rounded-full hover:bg-gray-100"
-                                title="Manual crop"
-                              >
-                                <Crop className="h-5 w-5 text-gray-700" />
-                              </button>
-                              
-                              <button
-                                onClick={() => autoFitSelectedImage(section.id, image.id)}
-                                className="p-2 bg-white rounded-full hover:bg-gray-100"
-                                title="Auto-fit"
-                              >
-                                <Edit className="h-5 w-5 text-gray-700" />
-                              </button>
-                            </div>
-                          </div>
-                          
-                          {/* Indicator for images that may need adjustment */}
-                          {image.needsProcessing && (
-                            <div className="absolute top-2 left-2 bg-yellow-500 text-white text-xs py-1 px-2 rounded-full pdf-hide">
-                              Adjust Recommended
-                            </div>
-                          )}
-                        </div>
-                        <input
-                          type="text"
-                          value={image.caption || ''}
-                          onChange={(e) => handleCaptionChange(section.id, image.id, e.target.value)}
-                          className="w-full text-center border-0 border-b border-gray-200 focus:ring-0 text-sm mt-1"
-                          placeholder="Add caption..."
-                        />
-                        
-                        <button
-                          onClick={() => removeImage(section.id, image.id)}
-                          className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 pdf-hide"
-                          title="Remove image"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ))}
-                    
-                    {/* Add image button integrated into the grid */}
-                    <div 
-                      className="relative flex flex-col items-center justify-center pdf-hide border-2 border-dashed border-gray-200 rounded-md cursor-pointer hover:bg-gray-50 justify-self-center place-self-center mx-auto bg-white"
-                      style={{
-                        width: section.imageLayout.imagesPerRow === 3 ? '50px' : '60px',
-                        height: section.imageLayout.imagesPerRow === 3 ? '50px' : '60px',
-                        borderRadius: '8px',
-                        gridColumn: section.imageLayout.imagesPerRow === 1 ? '1' : 'auto'
-                      }}
-                      onClick={() => {
-                        if (fileInputRef.current) {
-                          fileInputRef.current.setAttribute('data-section-id', section.id.toString());
-                          fileInputRef.current.click();
-                        }
-                      }}
-                    >
-                      <Plus className={`${section.imageLayout.imagesPerRow === 3 ? 'h-4 w-4' : 'h-5 w-5'} text-gray-400`} />
                     </div>
                   </div>
                 </div>
@@ -1441,40 +1386,25 @@ const ReportBuilder: React.FC = () => {
             </div>
           ))}
         </div>
-        
+
         <button 
           onClick={addSection}
           className="flex items-center justify-center w-full bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium py-2 px-3 rounded-md text-sm mb-4"
         >
-          <Plus className="mr-1 h-4 w-4" />
+          <Plus className="mr-1 h-4 w-4" suppressHydrationWarning />
           Add Section
         </button>
-        
+         
         <button 
           onClick={generatePDF}
           className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md"
         >
-          <Download className="mr-1 h-4 w-4" />
+          <Download className="mr-1 h-4 w-4" suppressHydrationWarning />
           Generate PDF
         </button>
       </main>
-      
-      <input
-        type="file"
-        ref={fileInputRef}
-        className="hidden"
-        accept="image/*"
-        multiple
-        onChange={(e) => {
-          if (e.target && fileInputRef.current) {
-            const sectionId = parseInt(fileInputRef.current.getAttribute('data-section-id') || '0');
-            handleImageUpload(sectionId, e);
-            e.target.value = ''; // Reset file input
-          }
-        }}
-      />
     </div>
   );
 };
 
-export default ReportBuilder; 
+export default ReportBuilder;
