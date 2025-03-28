@@ -4,7 +4,8 @@ import React, {
   useState,
   useRef,
   ChangeEvent,
-  DragEvent
+  DragEvent,
+  useEffect
 } from "react";
 import {
   FileText,
@@ -16,12 +17,14 @@ import {
   ArrowDown,
   Edit,
   Moon,
-  Sun
+  Sun,
+  Save,
+  X,
+  Edit2
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import {
-  autoFitImage,
   resizeImage,
   normalizeImage,
   shouldProcessImage
@@ -47,33 +50,135 @@ interface Section {
   };
 }
 
-const ReportBuilder: React.FC = () => {
+interface ReportBuilderProps {
+  initialData?: {
+    title: string;
+    startDate: string;
+    endDate: string;
+    sections: Section[];
+    name?: string;
+  };
+  reportId?: string;
+  onClose: () => void;
+}
+
+const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, onClose }) => {
   const { theme, toggleTheme } = useTheme();
 
   // ------------------
   // STATE
   // ------------------
-  const [reportTitle, setReportTitle] = useState<string>("Weekly Report");
-  const [reportStartDate, setReportStartDate] = useState<string>(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [reportEndDate, setReportEndDate] = useState<string>(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [sections, setSections] = useState<Section[]>([
-    {
+  const [reportName, setReportName] = useState<string>(() => {
+    if (initialData?.name) return initialData.name;
+    // Get all reports to determine the next number
+    const savedReports = localStorage.getItem('recentReports');
+    if (savedReports) {
+      try {
+        const reports = JSON.parse(savedReports);
+        const unnamedCount = reports.filter((r: any) => r.name?.startsWith('Unnamed')).length;
+        return unnamedCount > 0 ? `Unnamed${unnamedCount + 1}` : 'Unnamed1';
+      } catch (e) {
+        console.error('Error parsing reports:', e);
+        return 'Unnamed1';
+      }
+    }
+    return 'Unnamed1';
+  });
+  const [reportTitle, setReportTitle] = useState<string>(() => {
+    if (initialData) return initialData.title;
+    return "Weekly Report";
+  });
+  const [reportStartDate, setReportStartDate] = useState<string>(() => {
+    if (initialData) return initialData.startDate;
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [reportEndDate, setReportEndDate] = useState<string>(() => {
+    if (initialData) return initialData.endDate;
+    return new Date().toISOString().slice(0, 10);
+  });
+  const [sections, setSections] = useState<Section[]>(() => {
+    if (initialData) return initialData.sections;
+    return [{
       id: 1,
       title: "Summary",
       content: "",
       images: [],
       imageLayout: { imagesPerRow: 2 }
-    }
-  ]);
+    }];
+  });
   const [processingImage, setProcessingImage] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<string>("");
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [tempName, setTempName] = useState(reportName);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // ------------------
+  // AUTO-SAVE
+  // ------------------
+  const saveToServer = async () => {
+    try {
+      const currentReport = {
+        id: reportId || Date.now().toString(),
+        name: reportName,
+        title: reportTitle,
+        lastModified: new Date().toISOString(),
+        content: {
+          name: reportName,
+          title: reportTitle,
+          startDate: reportStartDate,
+          endDate: reportEndDate,
+          sections: sections
+        }
+      };
+
+      const response = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentReport)
+      });
+
+      if (!response.ok) throw new Error('Failed to save report');
+      setLastSaved(new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error('Error saving report:', error);
+      alert('Failed to save report. Please try again.');
+    }
+  };
+
+  const handleManualSave = () => {
+    setIsSaving(true);
+    setSaveFeedback("Saving...");
+    saveToServer();
+    setTimeout(() => {
+      setIsSaving(false);
+      setSaveFeedback("Saved!");
+      setTimeout(() => setSaveFeedback(""), 2000);
+    }, 500);
+  };
+
+  // Debounced save function
+  const debouncedSave = () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = setTimeout(saveToServer, 1000);
+  };
+
+  // Effect to save on changes
+  useEffect(() => {
+    debouncedSave();
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [reportTitle, reportStartDate, reportEndDate, sections, reportName]);
 
   // ------------------
   // DATE DISPLAY
@@ -161,21 +266,8 @@ const ReportBuilder: React.FC = () => {
       const needsProc = await shouldProcessImage(initialUrl);
       // Always resize large images
       const resizedUrl = await resizeImage(initialUrl);
-      // Determine aspect ratio from section layout
-      const sectionId = parseInt(
-        fileInputRef.current?.getAttribute("data-section-id") || "0"
-      );
-      const section = sections.find((s) => s.id === sectionId);
-      let targetAspectRatio = 4 / 3;
-      if (section?.imageLayout.imagesPerRow === 1) {
-        targetAspectRatio = 16 / 9;
-      } else if (section?.imageLayout.imagesPerRow === 3) {
-        targetAspectRatio = 1;
-      }
-      // Auto-crop to aspect ratio
-      const croppedUrl = await autoFitImage(resizedUrl, targetAspectRatio);
       // Normalize
-      const normalizedUrl = await normalizeImage(croppedUrl);
+      const normalizedUrl = await normalizeImage(resizedUrl);
       return { url: normalizedUrl, needsProcessing: false };
     } catch (error) {
       console.error("Error processing image:", error);
@@ -276,42 +368,6 @@ const ReportBuilder: React.FC = () => {
     );
   };
 
-  const autoFitSelectedImage = async (sectionId: number, imageId: string) => {
-    const section = sections.find((s) => s.id === sectionId);
-    if (!section) return;
-    const image = section.images.find((img) => img.id === imageId);
-    if (!image) return;
-
-    try {
-      setProcessingImage(true);
-      let targetAspectRatio = 4 / 3;
-      if (section.imageLayout.imagesPerRow === 1) {
-        targetAspectRatio = 16 / 9;
-      } else if (section.imageLayout.imagesPerRow === 3) {
-        targetAspectRatio = 1;
-      }
-      const processedUrl = await autoFitImage(image.url, targetAspectRatio);
-      setSections((prev) =>
-        prev.map((sec) =>
-          sec.id === sectionId
-            ? {
-                ...sec,
-                images: sec.images.map((img) =>
-                  img.id === imageId
-                    ? { ...img, url: processedUrl, needsProcessing: false }
-                    : img
-                )
-              }
-            : sec
-        )
-      );
-    } catch (error) {
-      console.error("Error auto-fitting image:", error);
-    } finally {
-      setProcessingImage(false);
-    }
-  };
-
   const preventDefault = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -338,15 +394,12 @@ const ReportBuilder: React.FC = () => {
    * Pre-clean raw HTML to remove unwanted tags.
    * Note: We are now preserving multiple <br> tags and newlines.
    */
- const cleanPastedHtml = (rawHtml: string): string => {
-  let cleaned = rawHtml;
-  // Keeping these commented ensures extra <br> tags and newlines are preserved:
-  // cleaned = cleaned.replace(/(<br\s*\/?>\s*){2,}/gi, "<br>");
-  // cleaned = cleaned.replace(/\n{2,}/g, "\n");
-  // Remove leftover MS Word style comments or tags if needed
-  cleaned = cleaned.replace(/<!--\[if.*?\<!\[endif\]-->/gs, "");
-  return cleaned;
-};
+  const cleanPastedHtml = (rawHtml: string): string => {
+    let cleaned = rawHtml;
+    // Remove leftover MS Word style comments or tags if needed
+    cleaned = cleaned.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/g, "");
+    return cleaned;
+  };
 
   /**
    * parseHtml() - Convert the HTML string to a structured array describing
@@ -801,7 +854,9 @@ const ReportBuilder: React.FC = () => {
         align: "center"
       });
 
-      pdf.save("report.pdf");
+      // Save with report name
+      const sanitizedFileName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      pdf.save(`${sanitizedFileName}.pdf`);
       loadingToast.remove();
     } catch (error) {
       console.error("Error generating PDF:", error);
@@ -843,6 +898,13 @@ const ReportBuilder: React.FC = () => {
     });
   };
 
+  const handleRename = async () => {
+    if (!tempName.trim()) return;
+    setReportName(tempName.trim());
+    setIsRenaming(false);
+    await saveToServer();
+  };
+
   // ------------------
   // RENDER
   // ------------------
@@ -863,24 +925,113 @@ const ReportBuilder: React.FC = () => {
           ref={reportRef}
         >
           <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
-              Report Builder
-            </h1>
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
-              title={
-                theme === "light"
-                  ? "Switch to dark mode"
-                  : "Switch to light mode"
-              }
-            >
-              {theme === "light" ? (
-                <Moon className="h-5 w-5" />
-              ) : (
-                <Sun className="h-5 w-5" />
-              )}
-            </button>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
+                Report Builder
+              </h1>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 dark:text-gray-400">|</span>
+                {isRenaming ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tempName}
+                      onChange={(e) => setTempName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRename();
+                        } else if (e.key === 'Escape') {
+                          setIsRenaming(false);
+                          setTempName(reportName);
+                        }
+                      }}
+                      className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-800 dark:text-white"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleRename}
+                      className="p-1 text-green-600 hover:text-green-700"
+                      title="Save name"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsRenaming(false);
+                        setTempName(reportName);
+                      }}
+                      className="p-1 text-gray-500 hover:text-gray-700"
+                      title="Cancel"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600 dark:text-gray-300">
+                      {reportName}
+                    </span>
+                    <button
+                      onClick={() => setIsRenaming(true)}
+                      className="p-1 text-gray-400 hover:text-gray-600"
+                      title="Rename report"
+                    >
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Last saved: {lastSaved}
+                </span>
+                <button
+                  onClick={handleManualSave}
+                  disabled={isSaving}
+                  className={`p-2 rounded-full transition-colors ${
+                    isSaving 
+                      ? 'bg-gray-100 dark:bg-slate-700 text-gray-400' 
+                      : 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                  }`}
+                  title="Save report"
+                >
+                  <Save className="h-5 w-5" />
+                </button>
+                {saveFeedback && (
+                  <span className={`text-sm ${
+                    saveFeedback === "Saved!" 
+                      ? 'text-green-600 dark:text-green-400' 
+                      : 'text-blue-600 dark:text-blue-400'
+                  }`}>
+                    {saveFeedback}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                title="Close report"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                title={
+                  theme === "light"
+                    ? "Switch to dark mode"
+                    : "Switch to light mode"
+                }
+              >
+                {theme === "light" ? (
+                  <Moon className="h-5 w-5" />
+                ) : (
+                  <Sun className="h-5 w-5" />
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="mb-6">
@@ -1083,13 +1234,6 @@ const ReportBuilder: React.FC = () => {
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="hidden group-hover:flex gap-2">
                             <button
-                              onClick={() => autoFitSelectedImage(section.id, image.id)}
-                              className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100"
-                              title="Auto-fit image"
-                            >
-                              <Edit className="h-4 w-4 text-gray-700" />
-                            </button>
-                            <button
                               onClick={() => removeImage(section.id, image.id)}
                               className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100"
                               title="Remove image"
@@ -1146,7 +1290,7 @@ const ReportBuilder: React.FC = () => {
           className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md"
         >
           <Download className="mr-1 h-4 w-4" />
-          Generate PDF
+          Save as PDF
         </button>
       </main>
 

@@ -1,7 +1,7 @@
 'use client';
 
-import ReportBuilder from '@/components/ReportBuilder';
+import MainPage from '@/components/MainPage';
 
 export default function Home() {
-  return <ReportBuilder />;
+  return <MainPage />;
 } 
