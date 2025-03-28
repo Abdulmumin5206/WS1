@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X } from 'lucide-react';
+import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Download } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ReportBuilder from './ReportBuilder';
 import { indexedDBService } from '@/utils/indexedDB';
@@ -47,13 +47,19 @@ const MainPage: React.FC = () => {
     }
   };
 
-  const createNewReport = () => {
-    setSelectedReport(null);
+  const handleOpenReport = (report: RecentReport) => {
+    setSelectedReport(report);
     setShowReportBuilder(true);
   };
 
-  const openReport = (report: RecentReport) => {
-    setSelectedReport(report);
+  const handleCloseReport = () => {
+    setSelectedReport(null);
+    setShowReportBuilder(false);
+    loadReports(); // Reload reports to get any updates
+  };
+
+  const createNewReport = () => {
+    setSelectedReport(null);
     setShowReportBuilder(true);
   };
 
@@ -102,23 +108,19 @@ const MainPage: React.FC = () => {
     });
   };
 
+  const generatePDF = async (report: RecentReport) => {
+    // This will be implemented later
+    console.log('Generating PDF for report:', report);
+  };
+
   if (showReportBuilder) {
-    return <ReportBuilder 
-      initialData={selectedReport?.content} 
-      reportId={selectedReport?.id}
-      onClose={() => {
-        setShowReportBuilder(false);
-        // Reload recent reports when returning to main page
-        const savedReports = localStorage.getItem('recentReports');
-        if (savedReports) {
-          try {
-            setRecentReports(JSON.parse(savedReports));
-          } catch (e) {
-            console.error('Error loading recent reports:', e);
-          }
-        }
-      }}
-    />;
+    return (
+      <ReportBuilder 
+        initialData={selectedReport?.content}
+        reportId={selectedReport?.id}
+        onClose={handleCloseReport}
+      />
+    );
   }
 
   if (isLoading) {
@@ -229,7 +231,7 @@ const MainPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <h3 
                             className="font-medium text-gray-800 dark:text-white cursor-pointer"
-                            onClick={() => openReport(report)}
+                            onClick={() => handleOpenReport(report)}
                           >
                             {report.name}
                           </h3>

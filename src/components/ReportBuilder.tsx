@@ -70,67 +70,100 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // ------------------
   // STATE
   // ------------------
-  const [reportName, setReportName] = useState<string>(() => {
-    if (initialData?.name) return initialData.name;
-    // Get all reports to determine the next number
-    const savedReports = localStorage.getItem('recentReports');
-    if (savedReports) {
-      try {
-        const reports = JSON.parse(savedReports);
-        const unnamedCount = reports.filter((r: any) => r.name?.startsWith('Unnamed')).length;
-        return unnamedCount > 0 ? `Unnamed${unnamedCount + 1}` : 'Unnamed1';
-      } catch (e) {
-        console.error('Error parsing reports:', e);
-        return 'Unnamed1';
-      }
-    }
-    return 'Unnamed1';
-  });
-  const [reportTitle, setReportTitle] = useState<string>(() => {
-    if (initialData) return initialData.title;
-    return "Weekly Report";
-  });
-  const [reportStartDate, setReportStartDate] = useState<string>(() => {
-    if (initialData) return initialData.startDate;
-    return new Date().toISOString().slice(0, 10);
-  });
-  const [reportEndDate, setReportEndDate] = useState<string>(() => {
-    if (initialData) return initialData.endDate;
-    return new Date().toISOString().slice(0, 10);
-  });
-  const [sections, setSections] = useState<Section[]>(() => {
-    if (initialData) return initialData.sections;
-    return [{
+  const [reportName, setReportName] = useState<string>(initialData?.name || "");
+  const [reportTitle, setReportTitle] = useState<string>(initialData?.title || "Weekly Report");
+  const [reportStartDate, setReportStartDate] = useState<string>(
+    initialData?.startDate || new Date().toISOString().slice(0, 10)
+  );
+  const [reportEndDate, setReportEndDate] = useState<string>(
+    initialData?.endDate || new Date().toISOString().slice(0, 10)
+  );
+  const [sections, setSections] = useState<Section[]>(
+    initialData?.sections || [{
       id: 1,
       title: "Summary",
       content: "",
       images: [],
       imageLayout: { imagesPerRow: 2 }
-    }];
-  });
+    }]
+  );
   const [processingImage, setProcessingImage] = useState(false);
   const [lastSaved, setLastSaved] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string>("");
   const [isRenaming, setIsRenaming] = useState(false);
   const [tempName, setTempName] = useState(reportName);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [existingReport, setExistingReport] = useState<any>(null);
+  const [newReportName, setNewReportName] = useState("");
+  const [showNamePrompt, setShowNamePrompt] = useState(!initialData?.name && !reportId);
+  const [saveStatus, setSaveStatus] = useState<{
+    isSaving: boolean;
+    message: string;
+    type: 'success' | 'error' | '';
+  }>({
+    isSaving: false,
+    message: '',
+    type: ''
+  });
+  const [isInitialized, setIsInitialized] = useState(!!initialData?.name || !!reportId);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  const currentReportIdRef = useRef<string>(reportId || '');
 
-  // ------------------
-  // AUTO-SAVE
-  // ------------------
-  const saveToServer = async () => {
+  // Initialize report data
+  useEffect(() => {
+    const loadReport = async () => {
+      if (initialData?.name) {
+        setReportName(initialData.name);
+        setReportTitle(initialData.title);
+        setReportStartDate(initialData.startDate);
+        setReportEndDate(initialData.endDate);
+        setSections(initialData.sections);
+        setIsInitialized(true);
+      } else if (reportId) {
+        try {
+          const report = await indexedDBService.getReport(reportId);
+          if (report) {
+            setReportName(report.name);
+            setReportTitle(report.content.title);
+            setReportStartDate(report.content.startDate);
+            setReportEndDate(report.content.endDate);
+            setSections(report.content.sections);
+            currentReportIdRef.current = report.id;
+            setIsInitialized(true);
+          }
+        } catch (error) {
+          console.error('Error loading report:', error);
+          toast.error('Failed to load report');
+        }
+      }
+    };
+
+    loadReport();
+  }, [initialData, reportId]);
+
+  // Save function
+  const saveReport = async (forceSave: boolean = false) => {
+    if (!reportName && !forceSave) return;
+
     try {
+      setSaveStatus({
+        isSaving: true,
+        message: 'Saving...',
+        type: ''
+      });
+
       const currentReport = {
-        id: reportId || Date.now().toString(),
+        id: currentReportIdRef.current || `report_${Date.now()}`,
         name: reportName,
         title: reportTitle,
         lastModified: new Date().toISOString(),
         content: {
+          name: reportName,
           title: reportTitle,
           startDate: reportStartDate,
           endDate: reportEndDate,
@@ -139,42 +172,83 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       };
 
       await indexedDBService.saveReport(currentReport);
-      setLastSaved(new Date().toLocaleTimeString());
-      toast.success('Report saved successfully');
+
+      setSaveStatus({
+        isSaving: false,
+        message: 'Saved',
+        type: 'success'
+      });
+
+      // Clear save message after 2 seconds
+      setTimeout(() => {
+        setSaveStatus(prev => ({
+          ...prev,
+          message: ''
+        }));
+      }, 2000);
+
     } catch (error) {
       console.error('Error saving report:', error);
-      toast.error('Failed to save report. Please try again.');
+      setSaveStatus({
+        isSaving: false,
+        message: 'Failed to save',
+        type: 'error'
+      });
     }
   };
 
-  const handleManualSave = () => {
-    setIsSaving(true);
-    setSaveFeedback("Saving...");
-    saveToServer();
-    setTimeout(() => {
-      setIsSaving(false);
-      setSaveFeedback("Saved!");
-      setTimeout(() => setSaveFeedback(""), 2000);
-    }, 500);
+  // Handle initial name prompt
+  const handleNamePrompt = async () => {
+    if (!newReportName.trim()) return;
+
+    try {
+      // Check if name already exists
+      const reports = await indexedDBService.getAllReports();
+      const existingReport = reports.find(r => r.name === newReportName.trim());
+
+      if (existingReport) {
+        if (window.confirm(`A report named "${newReportName}" already exists. Do you want to create a new version?`)) {
+          setReportName(newReportName.trim());
+          currentReportIdRef.current = `report_${Date.now()}`;
+        } else {
+          return;
+        }
+      } else {
+        setReportName(newReportName.trim());
+        currentReportIdRef.current = `report_${Date.now()}`;
+      }
+
+      setShowNamePrompt(false);
+      setIsInitialized(true);
+      await saveReport(true);
+    } catch (error) {
+      console.error('Error checking report name:', error);
+      setSaveStatus({
+        isSaving: false,
+        message: 'Failed to create report',
+        type: 'error'
+      });
+    }
   };
 
-  // Debounced save function
-  const debouncedSave = () => {
+  // Auto-save effect
+  useEffect(() => {
+    if (!isInitialized || !reportName) return;
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    saveTimeoutRef.current = setTimeout(saveToServer, 1000);
-  };
 
-  // Effect to save on changes
-  useEffect(() => {
-    debouncedSave();
+    saveTimeoutRef.current = setTimeout(() => {
+      saveReport();
+    }, 2000);
+
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [reportTitle, reportStartDate, reportEndDate, sections, reportName]);
+  }, [reportTitle, reportStartDate, reportEndDate, sections, reportName, isInitialized]);
 
   // ------------------
   // DATE DISPLAY
@@ -912,6 +986,63 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // ------------------
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Name Prompt Modal */}
+      {showNamePrompt && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Name Your Report
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Report Name:
+                </label>
+                <input
+                  type="text"
+                  value={newReportName}
+                  onChange={(e) => setNewReportName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-700 dark:text-white"
+                  placeholder="Enter report name"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleNamePrompt();
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => onClose()}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleNamePrompt}
+                  disabled={!newReportName.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Status Indicator */}
+      {saveStatus.message && (
+        <div className={`fixed bottom-4 right-4 px-4 py-2 rounded-md shadow-lg transition-opacity duration-300 ${
+          saveStatus.type === 'success' ? 'bg-green-500' :
+          saveStatus.type === 'error' ? 'bg-red-500' :
+          'bg-blue-500'
+        } text-white`}>
+          {saveStatus.message}
+        </div>
+      )}
+
       {processingImage && (
         <div className="fixed inset-0 z-40 bg-black bg-opacity-50 flex items-center justify-center">
           <div className="bg-white p-4 rounded-lg shadow-lg flex items-center space-x-3">
@@ -990,7 +1121,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   Last saved: {lastSaved}
                 </span>
                 <button
-                  onClick={handleManualSave}
+                  onClick={() => saveReport()}
                   disabled={isSaving}
                   className={`p-2 rounded-full transition-colors ${
                     isSaving 
