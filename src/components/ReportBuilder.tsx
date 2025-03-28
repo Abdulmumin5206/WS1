@@ -125,6 +125,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         setReportEndDate(initialData.endDate);
         setSections(initialData.sections);
         setIsInitialized(true);
+        // Ensure we have a report ID for existing reports
+        if (reportId) {
+          currentReportIdRef.current = reportId;
+        }
       } else if (reportId) {
         try {
           const report = await indexedDBService.getReport(reportId);
@@ -192,8 +196,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
       const reportSize = calculateReportSize(sections);
 
+      // If we don't have a current report ID, generate a new one
+      if (!currentReportIdRef.current) {
+        currentReportIdRef.current = `report_${Date.now()}`;
+      }
+
       const currentReport = {
-        id: currentReportIdRef.current || `report_${Date.now()}`,
+        id: currentReportIdRef.current,
         name: reportName,
         title: reportTitle,
         lastModified: new Date().toISOString(),
@@ -207,6 +216,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         },
       };
 
+      // Save using the existing or new ID
       await indexedDBService.saveReport(currentReport);
 
       setSaveStatus({
@@ -262,14 +272,6 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       setShowNamePrompt(true);
     }
   }, [initialData, reportId, reportName]);
-
-  // Add effect to update report name when dates change
-  useEffect(() => {
-    if (reportStartDate && reportEndDate && !reportName) {
-      const newName = getDefaultReportName(reportStartDate, reportEndDate, reportName);
-      setReportName(newName);
-    }
-  }, [reportStartDate, reportEndDate, reportName]);
 
   // Auto-save effect
   useEffect(() => {
@@ -1085,10 +1087,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   value={reportName}
                   onChange={(e) => {
                     const newName = e.target.value;
-                    setReportName(useDateInName && reportStartDate && reportEndDate && newName.trim()
-                      ? getDefaultReportName(reportStartDate, reportEndDate, newName)
-                      : newName
-                    );
+                    setReportName(newName);
                   }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
                   placeholder="Enter report name"
@@ -1106,11 +1105,12 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   checked={useDateInName}
                   onChange={(e) => {
                     setUseDateInName(e.target.checked);
-                    if (!e.target.checked) {
+                    if (e.target.checked && reportName.trim() && reportStartDate && reportEndDate) {
+                      // Only add date when checkbox is checked
+                      setReportName(getDefaultReportName(reportStartDate, reportEndDate, reportName));
+                    } else if (!e.target.checked) {
                       // Remove date from name if unchecking
                       setReportName(reportName.split('_')[0] || '');
-                    } else if (reportName.trim() && reportStartDate && reportEndDate) {
-                      setReportName(getDefaultReportName(reportStartDate, reportEndDate, reportName.trim()));
                     }
                   }}
                   className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
