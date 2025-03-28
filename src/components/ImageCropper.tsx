@@ -10,7 +10,7 @@ interface ImageCropperProps {
 
 const ImageCropper: React.FC<ImageCropperProps> = ({
   imageUrl,
-  aspectRatio = 4/3, // Default aspect ratio
+  aspectRatio: initialAspectRatio = 4/3,
   onCropComplete,
   onCancel
 }) => {
@@ -20,6 +20,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [aspectRatio, setAspectRatio] = useState(initialAspectRatio);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -29,8 +30,6 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     const img = new Image();
     img.onload = () => {
       setImageDimensions({ width: img.width, height: img.height });
-      
-      // Reset position and scale when loading a new image
       setPosition({ x: 0, y: 0 });
       setScale(1);
       setRotation(0);
@@ -48,11 +47,8 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
   // Handle mouse move for dragging
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
-    
     const newX = e.clientX - dragStart.x;
     const newY = e.clientY - dragStart.y;
-    
-    // Apply constraints to prevent dragging too far
     setPosition({ x: newX, y: newY });
   };
   
@@ -63,17 +59,25 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
   
   // Zoom in
   const zoomIn = () => {
-    setScale(prevScale => Math.min(prevScale + 0.1, 3)); // Max zoom: 3x
+    setScale(prevScale => Math.min(prevScale + 0.1, 3));
   };
   
   // Zoom out
   const zoomOut = () => {
-    setScale(prevScale => Math.max(prevScale - 0.1, 0.5)); // Min zoom: 0.5x
+    setScale(prevScale => Math.max(prevScale - 0.1, 0.5));
   };
   
   // Rotate image
   const rotateImage = () => {
     setRotation(prevRotation => (prevRotation + 90) % 360);
+  };
+
+  // Change aspect ratio
+  const changeAspectRatio = (newRatio: number) => {
+    setAspectRatio(newRatio);
+    // Reset position and scale when changing ratio
+    setPosition({ x: 0, y: 0 });
+    setScale(1);
   };
   
   // Complete cropping
@@ -85,12 +89,15 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
     
     if (!ctx) return;
     
-    // Get the crop area dimensions based on container
     const container = containerRef.current;
     const containerRect = container.getBoundingClientRect();
     
     canvas.width = containerRect.width;
     canvas.height = containerRect.height;
+    
+    // Fill with white background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     // Center the canvas
     ctx.translate(canvas.width / 2, canvas.height / 2);
@@ -114,15 +121,18 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
       imgHeight
     );
     
-    // Get the cropped image as a data URL
     const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.9);
-    
-    // Pass it back to the parent component
     onCropComplete(croppedImageUrl);
   };
   
+  // Calculate container height based on aspect ratio
+  const containerStyle = {
+    width: '100%',
+    height: aspectRatio ? `${(1 / aspectRatio) * 400}px` : '400px'
+  };
+  
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white bg-opacity-90">
       <div className="bg-white rounded-lg overflow-hidden shadow-xl max-w-4xl w-full p-4">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-medium">Crop Image</h3>
@@ -134,16 +144,46 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
           </button>
         </div>
         
+        {/* Aspect Ratio Selection */}
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => changeAspectRatio(1)}
+            className={`px-4 py-2 rounded ${
+              aspectRatio === 1 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Square (1:1)
+          </button>
+          <button
+            onClick={() => changeAspectRatio(4/3)}
+            className={`px-4 py-2 rounded ${
+              aspectRatio === 4/3 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Standard (4:3)
+          </button>
+          <button
+            onClick={() => changeAspectRatio(16/9)}
+            className={`px-4 py-2 rounded ${
+              aspectRatio === 16/9 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Widescreen (16:9)
+          </button>
+        </div>
+        
         <div className="flex flex-col items-center">
           {/* Crop container with aspect ratio */}
           <div 
             ref={containerRef}
-            className="relative overflow-hidden bg-gray-100 border border-gray-300 mb-4"
-            style={{
-              width: '100%',
-              height: '400px',
-              cursor: isDragging ? 'grabbing' : 'grab'
-            }}
+            className="relative overflow-hidden bg-gray-50 border border-gray-300 mb-4"
+            style={containerStyle}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -167,7 +207,7 @@ const ImageCropper: React.FC<ImageCropperProps> = ({
             />
             
             {/* Grid overlay */}
-            <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute inset-0">
               <div className="w-full h-full border-2 border-white border-opacity-50 grid grid-cols-3 grid-rows-3">
                 {Array.from({ length: 9 }).map((_, i) => (
                   <div key={i} className="border border-white border-opacity-20"></div>
