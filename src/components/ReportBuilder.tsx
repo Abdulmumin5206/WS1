@@ -1076,8 +1076,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
       {/* Name Prompt Modal */}
       {showNamePrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Name Your Report
             </h3>
@@ -1107,68 +1107,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   type="checkbox"
                   id="useDateInName"
                   checked={useDateInName}
-                  onChange={(e) => {
-                    setUseDateInName(e.target.checked);
-                    if (e.target.checked && reportName.trim() && reportStartDate && reportEndDate) {
-                      // Only add date when checkbox is checked
-                      setReportName(getDefaultReportName(reportStartDate, reportEndDate, reportName));
-                    } else if (!e.target.checked) {
-                      // Remove date from name if unchecking
-                      setReportName(reportName.split('_')[0] || '');
-                    }
-                  }}
-                  className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                  onChange={(e) => setUseDateInName(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="useDateInName" className="text-sm text-gray-700 dark:text-gray-300">
-                  Include date range in file name
+                  Include current date in report name
                 </label>
               </div>
-
-              {useDateInName && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={reportStartDate}
-                      onChange={(e) => {
-                        setReportStartDate(e.target.value);
-                        if (reportName.trim()) {
-                          setReportName(getDefaultReportName(e.target.value, reportEndDate, reportName.split('_')[0] || reportName));
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={reportEndDate}
-                      onChange={(e) => {
-                        setReportEndDate(e.target.value);
-                        if (reportName.trim()) {
-                          setReportName(getDefaultReportName(reportStartDate, e.target.value, reportName.split('_')[0] || reportName));
-                        }
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {useDateInName && reportStartDate && reportEndDate && reportName.trim() && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 p-3 rounded-md">
-                  <p className="font-medium mb-1">File Name Preview:</p>
-                  <p className="italic">
-                    {getDefaultReportName(reportStartDate, reportEndDate, reportName.split('_')[0] || reportName)}
-                  </p>
-                </div>
-              )}
 
               <div className="flex justify-end gap-3 mt-6">
                 <button
@@ -1176,7 +1121,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     setShowNamePrompt(false);
                     onClose();
                   }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md"
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
                 >
                   Cancel
                 </button>
@@ -1185,13 +1130,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     if (reportName.trim()) {
                       setShowNamePrompt(false);
                       setIsInitialized(true);
-                      saveReport(true);
                     }
                   }}
                   disabled={!reportName.trim()}
-                  className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`px-4 py-2 rounded-md ${
+                    reportName.trim()
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
                 >
-                  Create Report
+                  Continue
                 </button>
               </div>
             </div>
@@ -1250,7 +1198,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     />
                     <button
                       onClick={handleRename}
-                      className="p-1 text-green-600 hover:text-green-700"
+                      className="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
                       title="Save name"
                     >
                       <Edit2 className="h-4 w-4" />
@@ -1260,7 +1208,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         setIsRenaming(false);
                         setTempName(reportName);
                       }}
-                      className="p-1 text-gray-500 hover:text-gray-700"
+                      className="p-1.5 text-gray-500 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
                       title="Cancel"
                     >
                       <X className="h-4 w-4" />
@@ -1273,7 +1221,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     </span>
                     <button
                       onClick={() => setIsRenaming(true)}
-                      className="p-1 text-gray-400 hover:text-gray-600"
+                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
                       title="Rename report"
                     >
                       <Edit2 className="h-4 w-4" />
@@ -1290,10 +1238,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                 <button
                   onClick={() => saveReport()}
                   disabled={isSaving}
-                  className={`p-2 rounded-full transition-colors ${
+                  className={`p-2 rounded-full transition-all duration-200 ${
                     isSaving 
                       ? 'bg-gray-100 dark:bg-slate-700 text-gray-400' 
-                      : 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800'
+                      : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 hover:scale-105'
                   }`}
                   title="Save report"
                 >
@@ -1311,14 +1259,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
                 title="Close report"
               >
                 <X className="h-5 w-5" />
               </button>
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+                className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
                 title={
                   theme === "light"
                     ? "Switch to dark mode"
@@ -1376,14 +1324,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     <div className="flex items-center space-x-1 pdf-hide mb-2">
                       <button
                         onClick={() => moveSectionUp(section.id)}
-                        className="p-1 text-gray-400 hover:text-gray-600"
+                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section up"
                       >
                         <ArrowUp className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => moveSectionDown(section.id)}
-                        className="p-1 text-gray-400 hover:text-gray-600"
+                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section down"
                       >
                         <ArrowDown className="h-4 w-4" />
@@ -1391,7 +1339,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       {sections.length > 1 && (
                         <button
                           onClick={() => removeSection(section.id)}
-                          className="p-1 text-gray-400 hover:text-red-500"
+                          className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                           title="Remove section"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1416,7 +1364,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
               {section.images.length === 0 && (
                 <div
-                  className="border-2 border-dashed border-gray-200 rounded-md p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-white pdf-hide mb-3 bg-white"
+                  className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-md p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 pdf-hide mb-3 bg-white dark:bg-slate-800"
                   style={{ minHeight: "150px" }}
                   onDragOver={preventDefault}
                   onDragEnter={preventDefault}
@@ -1536,7 +1484,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                           <div className="hidden group-hover:flex gap-2">
                             <button
                               onClick={() => removeImage(section.id, image.id)}
-                              className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100"
+                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-red-50 dark:hover:bg-red-900/20 hover:scale-105 transition-all duration-200"
                               title="Remove image"
                             >
                               <Trash2 className="h-4 w-4 text-red-500" />
@@ -1580,7 +1528,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
         <button
           onClick={addSection}
-          className="flex items-center justify-center w-full bg-gray-50 hover:bg-gray-100 text-gray-600 font-medium py-2 px-3 rounded-md text-sm mb-4"
+          className="flex items-center justify-center w-full bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium py-2 px-3 rounded-md text-sm mb-4 transition-colors"
         >
           <Plus className="mr-1 h-4 w-4" />
           Add Section
@@ -1588,7 +1536,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
         <button
           onClick={generatePDF}
-          className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md"
+          className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
         >
           <Download className="mr-1 h-4 w-4" />
           Save as PDF
