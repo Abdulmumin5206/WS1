@@ -31,6 +31,8 @@ import {
 } from "./ImageUtility";
 import RichTextEditor from "./RichTextEditor";
 import { useTheme } from "@/contexts/ThemeContext";
+import { indexedDBService } from '@/utils/indexedDB';
+import { toast } from 'react-hot-toast';
 
 interface ImageItem {
   id: string;
@@ -129,25 +131,19 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         title: reportTitle,
         lastModified: new Date().toISOString(),
         content: {
-          name: reportName,
           title: reportTitle,
           startDate: reportStartDate,
           endDate: reportEndDate,
-          sections: sections
-        }
+          sections: sections,
+        },
       };
 
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentReport)
-      });
-
-      if (!response.ok) throw new Error('Failed to save report');
+      await indexedDBService.saveReport(currentReport);
       setLastSaved(new Date().toLocaleTimeString());
+      toast.success('Report saved successfully');
     } catch (error) {
       console.error('Error saving report:', error);
-      alert('Failed to save report. Please try again.');
+      toast.error('Failed to save report. Please try again.');
     }
   };
 
@@ -899,10 +895,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   };
 
   const handleRename = async () => {
-    if (!tempName.trim()) return;
-    setReportName(tempName.trim());
-    setIsRenaming(false);
-    await saveToServer();
+    if (!tempName.trim() || !reportId) return;
+    try {
+      await indexedDBService.updateReportName(reportId, tempName.trim());
+      setReportName(tempName.trim());
+      setIsRenaming(false);
+      toast.success('Report renamed successfully');
+    } catch (error) {
+      console.error('Error renaming report:', error);
+      toast.error('Failed to rename report. Please try again.');
+    }
   };
 
   // ------------------

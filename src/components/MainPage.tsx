@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ReportBuilder from './ReportBuilder';
+import { indexedDBService } from '@/utils/indexedDB';
+import { toast } from 'react-hot-toast';
 
 interface RecentReport {
   id: string;
@@ -9,7 +11,6 @@ interface RecentReport {
   title: string;
   lastModified: string;
   content: {
-    name: string;
     title: string;
     startDate: string;
     endDate: string;
@@ -24,10 +25,7 @@ const MainPage: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<RecentReport | null>(null);
   const [editingReportId, setEditingReportId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ show: boolean; reportId: string | null }>({
-    show: false,
-    reportId: null
-  });
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -36,12 +34,14 @@ const MainPage: React.FC = () => {
 
   const loadReports = async () => {
     try {
-      const response = await fetch('/api/reports');
-      if (!response.ok) throw new Error('Failed to load reports');
-      const reports = await response.json();
-      setRecentReports(reports);
+      setIsLoading(true);
+      const reports = await indexedDBService.getAllReports();
+      setRecentReports(reports.sort((a, b) => 
+        new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
+      ));
     } catch (error) {
       console.error('Error loading reports:', error);
+      toast.error('Failed to load reports. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -62,58 +62,33 @@ const MainPage: React.FC = () => {
     setEditingTitle(report.name);
   };
 
-  const handleRename = async (reportId: string) => {
-    if (!editingTitle.trim()) return;
-    
+  const handleRename = async () => {
+    if (!editingReportId || !editingTitle.trim()) return;
     try {
-      const updatedReport = {
-        ...recentReports.find(r => r.id === reportId)!,
-        name: editingTitle.trim(),
-        content: {
-          ...recentReports.find(r => r.id === reportId)!.content,
-          name: editingTitle.trim()
-        }
-      };
-
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedReport)
-      });
-
-      if (!response.ok) throw new Error('Failed to update report');
-
-      setRecentReports(prev => prev.map(report => 
-        report.id === reportId ? updatedReport : report
-      ));
+      await indexedDBService.updateReportName(editingReportId, editingTitle.trim());
+      await loadReports();
       setEditingReportId(null);
+      toast.success('Report renamed successfully');
     } catch (error) {
       console.error('Error renaming report:', error);
-      alert('Failed to rename report. Please try again.');
+      toast.error('Failed to rename report. Please try again.');
     }
   };
 
   const confirmDelete = (reportId: string) => {
-    setShowDeleteConfirm({ show: true, reportId });
+    setShowDeleteConfirm(reportId);
   };
 
   const handleDelete = async () => {
-    if (!showDeleteConfirm.reportId) return;
-    
+    if (!showDeleteConfirm) return;
     try {
-      const response = await fetch('/api/reports', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: showDeleteConfirm.reportId })
-      });
-
-      if (!response.ok) throw new Error('Failed to delete report');
-
-      setRecentReports(prev => prev.filter(report => report.id !== showDeleteConfirm.reportId));
-      setShowDeleteConfirm({ show: false, reportId: null });
+      await indexedDBService.deleteReport(showDeleteConfirm);
+      await loadReports();
+      setShowDeleteConfirm(null);
+      toast.success('Report deleted successfully');
     } catch (error) {
       console.error('Error deleting report:', error);
-      alert('Failed to delete report. Please try again.');
+      toast.error('Failed to delete report. Please try again.');
     }
   };
 
@@ -157,7 +132,7 @@ const MainPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm.show && (
+      {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
@@ -168,7 +143,7 @@ const MainPage: React.FC = () => {
             </p>
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setShowDeleteConfirm({ show: false, reportId: null })}
+                onClick={() => setShowDeleteConfirm(null)}
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
               >
                 Cancel
@@ -229,14 +204,14 @@ const MainPage: React.FC = () => {
                             onChange={(e) => setEditingTitle(e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                handleRename(report.id);
+                                handleRename();
                               }
                             }}
                             className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-800 dark:text-white"
                             autoFocus
                           />
                           <button
-                            onClick={() => handleRename(report.id)}
+                            onClick={handleRename}
                             className="p-1 text-green-600 hover:text-green-700"
                             title="Save name"
                           >
