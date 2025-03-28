@@ -107,6 +107,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     type: ''
   });
   const [isInitialized, setIsInitialized] = useState(!!initialData?.name || !!reportId);
+  const [useDateInName, setUseDateInName] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +147,38 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     loadReport();
   }, [initialData, reportId]);
 
+  // Calculate total report size
+  const calculateReportSize = (sections: Section[]): number => {
+    // Calculate size of text content
+    const contentSize = new Blob([JSON.stringify({
+      title: reportTitle,
+      startDate: reportStartDate,
+      endDate: reportEndDate,
+      sections: sections.map(s => ({
+        ...s,
+        content: s.content,
+        images: s.images.map(img => ({
+          ...img,
+          url: '' // Don't include the full image data in size calculation
+        }))
+      }))
+    })]).size;
+
+    // Calculate size of all images
+    const imageSize = sections.reduce((total, section) => {
+      return total + section.images.reduce((sectionTotal, img) => {
+        // For data URLs, remove the prefix and calculate actual base64 size
+        if (img.url.startsWith('data:')) {
+          const base64 = img.url.split(',')[1];
+          return sectionTotal + (base64.length * 0.75); // base64 is 4/3 times larger than actual size
+        }
+        return sectionTotal;
+      }, 0);
+    }, 0);
+
+    return contentSize + imageSize;
+  };
+
   // Save function
   const saveReport = async (forceSave: boolean = false) => {
     if (!reportName && !forceSave) return;
@@ -157,11 +190,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         type: ''
       });
 
+      const reportSize = calculateReportSize(sections);
+
       const currentReport = {
         id: currentReportIdRef.current || `report_${Date.now()}`,
         name: reportName,
         title: reportTitle,
         lastModified: new Date().toISOString(),
+        size: reportSize,
         content: {
           name: reportName,
           title: reportTitle,
@@ -197,39 +233,43 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     }
   };
 
-  // Handle initial name prompt
-  const handleNamePrompt = async () => {
-    if (!newReportName.trim()) return;
-
-    try {
-      // Check if name already exists
-      const reports = await indexedDBService.getAllReports();
-      const existingReport = reports.find(r => r.name === newReportName.trim());
-
-      if (existingReport) {
-        if (window.confirm(`A report named "${newReportName}" already exists. Do you want to create a new version?`)) {
-          setReportName(newReportName.trim());
-          currentReportIdRef.current = `report_${Date.now()}`;
-        } else {
-          return;
-        }
-      } else {
-        setReportName(newReportName.trim());
-        currentReportIdRef.current = `report_${Date.now()}`;
-      }
-
-      setShowNamePrompt(false);
-      setIsInitialized(true);
-      await saveReport(true);
-    } catch (error) {
-      console.error('Error checking report name:', error);
-      setSaveStatus({
-        isSaving: false,
-        message: 'Failed to create report',
-        type: 'error'
-      });
+  // Update the getDefaultReportName function
+  const getDefaultReportName = (startDate: string, endDate: string, baseName: string) => {
+    if (!baseName.trim()) return '';
+    
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const startMonth = start.toLocaleString('default', { month: 'long' });
+    const endMonth = end.toLocaleString('default', { month: 'long' });
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+    
+    let dateStr = '';
+    if (startMonth === endMonth && startYear === endYear) {
+      dateStr = `${start.getDate()}-${end.getDate()}_${startMonth}_${startYear}`;
+    } else if (startYear === endYear) {
+      dateStr = `${start.getDate()}_${startMonth}-${end.getDate()}_${endMonth}_${startYear}`;
+    } else {
+      dateStr = `${start.getDate()}_${startMonth}_${startYear}-${end.getDate()}_${endMonth}_${endYear}`;
     }
+    
+    return baseName ? `${baseName}_${dateStr}` : dateStr;
   };
+
+  // Update the useEffect for initial name prompt
+  useEffect(() => {
+    if (!initialData && !reportId && !reportName) {
+      setShowNamePrompt(true);
+    }
+  }, [initialData, reportId, reportName]);
+
+  // Add effect to update report name when dates change
+  useEffect(() => {
+    if (reportStartDate && reportEndDate && !reportName) {
+      const newName = getDefaultReportName(reportStartDate, reportEndDate, reportName);
+      setReportName(newName);
+    }
+  }, [reportStartDate, reportEndDate, reportName]);
 
   // Auto-save effect
   useEffect(() => {
@@ -1007,10 +1047,30 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // RENDER
   // ------------------
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+      {/* Beta Version Banner */}
+      <div className="bg-blue-600 text-white px-4 py-2">
+        <div className="container mx-auto max-w-4xl flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="bg-yellow-400 text-blue-800 text-xs font-bold px-2 py-1 rounded">BETA</span>
+            <p className="text-sm">This is a beta version running in test mode. Some features may be experimental.</p>
+          </div>
+          <a 
+            href="#" 
+            className="text-xs text-blue-100 hover:text-white underline"
+            onClick={(e) => {
+              e.preventDefault();
+              toast.success('Thank you for your interest! Feedback feature coming soon.');
+            }}
+          >
+            Send Feedback
+          </a>
+        </div>
+      </div>
+
       {/* Name Prompt Modal */}
       {showNamePrompt && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Name Your Report
@@ -1018,35 +1078,107 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Report Name:
+                  Report Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  value={newReportName}
-                  onChange={(e) => setNewReportName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-700 dark:text-white"
+                  value={reportName}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    setReportName(useDateInName && reportStartDate && reportEndDate && newName.trim()
+                      ? getDefaultReportName(reportStartDate, reportEndDate, newName)
+                      : newName
+                    );
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
                   placeholder="Enter report name"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleNamePrompt();
+                  required
+                />
+                {!reportName.trim() && (
+                  <p className="mt-1 text-sm text-red-500">Report name is required</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="useDateInName"
+                  checked={useDateInName}
+                  onChange={(e) => {
+                    setUseDateInName(e.target.checked);
+                    if (!e.target.checked) {
+                      // Remove date from name if unchecking
+                      setReportName(reportName.split('_')[0] || '');
+                    } else if (reportName.trim() && reportStartDate && reportEndDate) {
+                      setReportName(getDefaultReportName(reportStartDate, reportEndDate, reportName.trim()));
                     }
                   }}
+                  className="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                 />
+                <label htmlFor="useDateInName" className="text-sm text-gray-700 dark:text-gray-300">
+                  Include date range in file name
+                </label>
               </div>
-              <div className="flex justify-end gap-3">
+
+              {useDateInName && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Start Date
+                    </label>
+                    <input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => {
+                        setReportStartDate(e.target.value);
+                        if (reportName.trim()) {
+                          setReportName(getDefaultReportName(e.target.value, reportEndDate, reportName.split('_')[0] || reportName));
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      End Date
+                    </label>
+                    <input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => {
+                        setReportEndDate(e.target.value);
+                        if (reportName.trim()) {
+                          setReportName(getDefaultReportName(reportStartDate, e.target.value, reportName.split('_')[0] || reportName));
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {useDateInName && reportStartDate && reportEndDate && reportName.trim() && (
+                <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-700 p-3 rounded-md">
+                  <p className="font-medium mb-1">File Name Preview:</p>
+                  <p className="italic">
+                    {getDefaultReportName(reportStartDate, reportEndDate, reportName.split('_')[0] || reportName)}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 mt-6">
                 <button
-                  onClick={() => onClose()}
-                  className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleNamePrompt}
-                  disabled={!newReportName.trim()}
+                  onClick={() => {
+                    if (reportName.trim()) {
+                      setShowNamePrompt(false);
+                      setIsInitialized(true);
+                      saveReport(true);
+                    }
+                  }}
+                  disabled={!reportName.trim()}
                   className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue
+                  Create Report
                 </button>
               </div>
             </div>

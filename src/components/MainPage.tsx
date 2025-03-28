@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Download } from 'lucide-react';
+import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Download, Moon, Sun } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ReportBuilder from './ReportBuilder';
 import { indexedDBService } from '@/utils/indexedDB';
 import { toast } from 'react-hot-toast';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface RecentReport {
   id: string;
@@ -16,10 +17,12 @@ interface RecentReport {
     endDate: string;
     sections: any[];
   };
+  size?: number;
 }
 
 const MainPage: React.FC = () => {
   const router = useRouter();
+  const { theme, toggleTheme } = useTheme();
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [showReportBuilder, setShowReportBuilder] = useState(false);
   const [selectedReport, setSelectedReport] = useState<RecentReport | null>(null);
@@ -108,6 +111,14 @@ const MainPage: React.FC = () => {
     });
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
   const generatePDF = async (report: RecentReport) => {
     // This will be implemented later
     console.log('Generating PDF for report:', report);
@@ -133,6 +144,26 @@ const MainPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
+      {/* Beta Version Banner */}
+      <div className="bg-blue-600 text-white px-4 py-2">
+        <div className="container mx-auto max-w-4xl flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="bg-yellow-400 text-blue-800 text-xs font-bold px-2 py-1 rounded">BETA</span>
+            <p className="text-sm">This is a beta version running in test mode. Some features may be experimental.</p>
+          </div>
+          <a 
+            href="#" 
+            className="text-xs text-blue-100 hover:text-white underline"
+            onClick={(e) => {
+              e.preventDefault();
+              toast.success('Feedback feature coming soon!');
+            }}
+          >
+            Send Feedback
+          </a>
+        </div>
+      </div>
+
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -166,17 +197,30 @@ const MainPage: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
             Report Builder
           </h1>
-          <button
-            onClick={createNewReport}
-            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="h-5 w-5 mr-2" />
-            New Report
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleTheme}
+              className="p-2 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-slate-600"
+              title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+            >
+              {theme === "light" ? (
+                <Moon className="h-5 w-5" />
+              ) : (
+                <Sun className="h-5 w-5" />
+              )}
+            </button>
+            <button
+              onClick={createNewReport}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              New Report
+            </button>
+          </div>
         </div>
 
         {/* Recent Reports Section */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
+        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
           <div className="flex items-center mb-4">
             <Clock className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
             <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
@@ -244,9 +288,10 @@ const MainPage: React.FC = () => {
                           </button>
                         </div>
                       )}
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Last modified: {formatDate(report.lastModified)}
-                      </p>
+                      <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
+                        <span>Last modified: {formatDate(report.lastModified)}</span>
+                        <span>Size: {formatFileSize(report.size || 0)}</span>
+                      </div>
                     </div>
                   </div>
                   <button
@@ -260,37 +305,6 @@ const MainPage: React.FC = () => {
               ))}
             </div>
           )}
-        </div>
-
-        {/* Quick Actions Section */}
-        <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
-          <div className="flex items-center mb-4">
-            <FolderOpen className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2" />
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-              Quick Actions
-            </h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button
-              onClick={createNewReport}
-              className="flex items-center justify-center p-4 bg-gray-50 dark:bg-slate-700 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors"
-            >
-              <Plus className="h-6 w-6 text-gray-500 dark:text-gray-400 mr-2" />
-              <span className="text-gray-700 dark:text-gray-300">New Report</span>
-            </button>
-            
-            <button
-              onClick={() => {
-                // TODO: Implement file upload functionality
-                alert('File upload coming soon!');
-              }}
-              className="flex items-center justify-center p-4 bg-gray-50 dark:bg-slate-700 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors"
-            >
-              <FileText className="h-6 w-6 text-gray-500 dark:text-gray-400 mr-2" />
-              <span className="text-gray-700 dark:text-gray-300">Open PDF</span>
-            </button>
-          </div>
         </div>
       </main>
     </div>
