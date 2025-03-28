@@ -963,11 +963,15 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     try {
                       const aspectRatio = imgObj.width / imgObj.height;
                       let imgWidth = singleImageWidth;
-                      let imgH = imgWidth / aspectRatio;
+                      let imgHeight = imgWidth / aspectRatio;
 
-                      if (imgH > imageHeight) {
-                        imgH = imageHeight;
-                        imgWidth = imgH * aspectRatio;
+                      // Calculate the maximum height based on the layout
+                      const maxHeight = imagesPerRow === 1 ? 85 : imagesPerRow === 2 ? 65 : 45;
+                      
+                      // If the calculated height exceeds maxHeight, scale down proportionally
+                      if (imgHeight > maxHeight) {
+                        imgHeight = maxHeight;
+                        imgWidth = imgHeight * aspectRatio;
                       }
 
                       // Recalculate xPos for centered single images after aspect ratio adjustment
@@ -977,16 +981,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
                       // Draw white background
                       pdf.setFillColor(255, 255, 255);
-                      pdf.rect(xPos, y, imgWidth, imgH, "F");
+                      pdf.rect(xPos, y, imgWidth, imgHeight, "F");
 
-                      // Add the image directly without compression
+                      // Add the image with exact proportions
                       pdf.addImage(
                         image.url,
                         "JPEG",
                         xPos,
                         y,
                         imgWidth,
-                        imgH
+                        imgHeight
                       );
 
                       // Only increment xPos for multi-image layouts
@@ -1167,6 +1171,15 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               )}
 
               <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowNamePrompt(false);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 hover:bg-gray-300 rounded-md"
+                >
+                  Cancel
+                </button>
                 <button
                   onClick={() => {
                     if (reportName.trim()) {
@@ -1507,11 +1520,12 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         : 'grid-cols-3'
                   }`}>
                     {section.images.map((image) => (
-                      <div key={image.id} className="relative group">
+                      <div key={image.id} className="relative group aspect-[4/3]">
                         <img
                           src={image.url}
                           alt={image.caption || 'Report image'}
-                          className="w-full h-auto rounded-lg shadow-sm"
+                          className="w-full h-full object-contain rounded-lg shadow-sm"
+                          style={{ aspectRatio: '4/3' }}
                         />
                         {image.needsProcessing && (
                           <div className="absolute top-2 right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded">
