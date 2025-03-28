@@ -327,21 +327,69 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // ------------------
   // IMAGE HANDLING
   // ------------------
+  // Process uploaded image with size optimization
   const processUploadedImage = async (
     file: File
   ): Promise<{ url: string; needsProcessing: boolean }> => {
     const initialUrl = URL.createObjectURL(file);
     try {
-      // Check if the image needs processing
-      const needsProc = await shouldProcessImage(initialUrl);
-      // Always resize large images
-      const resizedUrl = await resizeImage(initialUrl);
-      // Normalize
-      const normalizedUrl = await normalizeImage(resizedUrl);
-      return { url: normalizedUrl, needsProcessing: false };
+      // Optimize image size during upload
+      const optimizedImage = await new Promise<{ url: string; size: number }>((resolve) => {
+        const img = document.createElement("img");
+        img.src = initialUrl;
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+
+          // If image is larger than 2000px in any dimension, reduce it proportionally
+          const maxDimension = 2000;
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
+            } else {
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          
+          if (ctx) {
+            // Use better quality settings
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
+            // Draw image with white background (for transparent PNGs)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Convert to JPEG with 0.8 quality (good balance between size and quality)
+            const optimizedUrl = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Calculate size of optimized image
+            const base64str = optimizedUrl.split(',')[1];
+            const optimizedSize = Math.round((base64str.length * 3) / 4);
+
+            resolve({ url: optimizedUrl, size: optimizedSize });
+          } else {
+            // Fallback to original file if canvas is not supported
+            resolve({ url: initialUrl, size: file.size });
+          }
+        };
+        img.onerror = () => resolve({ url: initialUrl, size: file.size });
+      });
+
+      return { url: optimizedImage.url, needsProcessing: false };
     } catch (error) {
       console.error("Error processing image:", error);
       return { url: initialUrl, needsProcessing: true };
+    } finally {
+      URL.revokeObjectURL(initialUrl);
     }
   };
 
@@ -356,10 +404,18 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     const processedImages: ImageItem[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      
+      // Check file size before processing
+      const maxSizeMB = 10;
+      if (file.size > maxSizeMB * 1024 * 1024) {
+        toast.error(`File ${file.name} is too large. Maximum size is ${maxSizeMB}MB`);
+        continue;
+      }
+
       const { url, needsProcessing } = await processUploadedImage(file);
       processedImages.push({
         id: Date.now() + Math.random().toString(36).substr(2, 9),
-        file,
+        file: new File([dataURLtoBlob(url)], file.name, { type: 'image/jpeg' }),
         url,
         caption: "",
         needsProcessing
@@ -374,6 +430,19 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       )
     );
     setProcessingImage(false);
+  };
+
+  // Helper function to convert Data URL to Blob
+  const dataURLtoBlob = (dataURL: string): Blob => {
+    const arr = dataURL.split(',');
+    const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
   };
 
   const handleDrop = async (e: DragEvent<HTMLDivElement>, sectionId: number) => {
@@ -845,10 +914,9 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             for (let i = 0; i < rowImages.length; i++) {
               const image = rowImages[i];
               try {
-                const compressedImageUrl = await compressImage(image.url);
                 await new Promise<void>((resolve) => {
                   const imgObj = document.createElement("img");
-                  imgObj.src = compressedImageUrl;
+                  imgObj.src = image.url;
                   imgObj.onload = () => {
                     try {
                       const aspectRatio = imgObj.width / imgObj.height;
@@ -869,27 +937,15 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       pdf.setFillColor(255, 255, 255);
                       pdf.rect(xPos, y, imgWidth, imgH, "F");
 
-                      // Add the image
+                      // Add the image directly without compression
                       pdf.addImage(
-                        compressedImageUrl,
+                        image.url,
                         "JPEG",
                         xPos,
                         y,
                         imgWidth,
                         imgH
                       );
-
-                      // Add caption if present
-                      if (image.caption) {
-                        const captionY = y + imgH + 3.5;
-                        pdf.setFont("helvetica", "italic");
-                        pdf.setFontSize(9);
-                        pdf.setTextColor(100, 100, 100);
-                        pdf.text(image.caption, xPos + imgWidth / 2, captionY, {
-                          align: "center",
-                          maxWidth: imgWidth
-                        });
-                      }
 
                       // Only increment xPos for multi-image layouts
                       if (imagesPerRow > 1) {
@@ -906,7 +962,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   };
                 });
               } catch (err) {
-                console.error("Error compressing image:", err);
+                console.error("Error processing image for PDF:", err);
               }
             }
             y += imageHeight + SPACING.IMAGE_GAP + 5;
@@ -932,40 +988,6 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       console.error("Error generating PDF:", error);
       alert("Error generating PDF. Please try again.");
     }
-  };
-
-  // Helper to compress images before embedding
-  const compressImage = async (
-    imageUrl: string,
-    maxWidth = 1000,
-    quality = 0.7
-  ): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = document.createElement("img");
-      img.src = imageUrl;
-      img.onload = () => {
-        let newWidth = img.width;
-        let newHeight = img.height;
-        if (newWidth > maxWidth) {
-          const ratio = maxWidth / newWidth;
-          newWidth = maxWidth;
-          newHeight = img.height * ratio;
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, newWidth, newHeight);
-          resolve(canvas.toDataURL("image/jpeg", quality));
-        } else {
-          resolve(imageUrl);
-        }
-      };
-      img.onerror = () => {
-        resolve(imageUrl);
-      };
-    });
   };
 
   const handleRename = async () => {
