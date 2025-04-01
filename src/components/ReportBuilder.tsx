@@ -20,7 +20,9 @@ import {
   Sun,
   Save,
   X,
-  Edit2
+  Edit2,
+  RotateCw,
+  RotateCcw
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -40,6 +42,7 @@ interface ImageItem {
   url: string;
   caption: string;
   needsProcessing?: boolean;
+  rotation: number;
 }
 
 interface Section {
@@ -91,8 +94,6 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   const [lastSaved, setLastSaved] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<string>("");
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [tempName, setTempName] = useState(reportName);
   const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   const [existingReport, setExistingReport] = useState<any>(null);
   const [newReportName, setNewReportName] = useState("");
@@ -187,14 +188,25 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
   // Update report name based on date checkbox
   useEffect(() => {
-    if (useDateInName) {
-      const baseName = reportName.split('_')[0]; // Get base name without date
+    if (useDateInName && reportName) {
+      let baseName = reportName;
+      // If the report name already contains a date pattern, extract the base name
+      if (reportName.includes('_') && /_\d+/.test(reportName)) {
+        baseName = reportName.split('_')[0];
+      }
       const dateFormattedName = getDefaultReportName(reportStartDate, reportEndDate, baseName);
       setPreviewReportName(dateFormattedName);
     } else {
       setPreviewReportName("");
     }
   }, [useDateInName, reportName, reportStartDate, reportEndDate]);
+
+  // Store current report name in localStorage for real-time access
+  useEffect(() => {
+    if (reportName) {
+      localStorage.setItem('currentReportName', reportName);
+    }
+  }, [reportName]);
 
   // Save function
   const saveReport = async (forceSave: boolean = false) => {
@@ -343,16 +355,23 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // ------------------
   const addSection = () => {
     const newId = Math.max(0, ...sections.map((s) => s.id)) + 1;
+    const sectionTitle = reportName || "New Section";
+    
     setSections((prev) => [
       ...prev,
       {
         id: newId,
-        title: "New Section",
+        title: sectionTitle,
         content: "<p></p>",
         images: [],
         imageLayout: { imagesPerRow: 2 }
       }
     ]);
+    
+    // Force a state update to ensure UI is in sync
+    setTimeout(() => {
+      setSections(current => [...current]);
+    }, 0);
   };
 
   const removeSection = (id: number) => {
@@ -386,6 +405,31 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // ------------------
   // IMAGE HANDLING
   // ------------------
+
+  const handleImageRotate = (
+    sectionId: number,
+    imageId: string,
+    direction: 'left' | 'right'
+  ) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              images: section.images.map((img) =>
+                img.id === imageId
+                  ? {
+                      ...img,
+                      rotation: (img.rotation + (direction === 'right' ? 90 : -90)) % 360,
+                    }
+                  : img
+              ),
+            }
+          : section
+      )
+    );
+  };
+
   // Process uploaded image with size optimization
   const processUploadedImage = async (
     file: File
@@ -456,35 +500,24 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     sectionId: number,
     e: ChangeEvent<HTMLInputElement>
   ) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
     setProcessingImage(true);
 
-    const processedImages: ImageItem[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      
-      // Check file size before processing
-      const maxSizeMB = 10;
-      if (file.size > maxSizeMB * 1024 * 1024) {
-        toast.error(`File ${file.name} is too large. Maximum size is ${maxSizeMB}MB`);
-        continue;
-      }
-
-      const { url, needsProcessing } = await processUploadedImage(file);
-      processedImages.push({
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
-        file: new File([dataURLtoBlob(url)], file.name, { type: 'image/jpeg' }),
-        url,
-        caption: "",
-        needsProcessing
-      });
-    }
+    const { url, needsProcessing } = await processUploadedImage(file);
+    const newImage: ImageItem = {
+      id: Date.now() + Math.random().toString(36).substr(2, 9),
+      file,
+      url,
+      caption: "",
+      needsProcessing,
+      rotation: 0,
+    };
 
     setSections((prev) =>
       prev.map((section) =>
         section.id === sectionId
-          ? { ...section, images: [...section.images, ...processedImages] }
+          ? { ...section, images: [...section.images, newImage] }
           : section
       )
     );
@@ -520,7 +553,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         file,
         url,
         caption: "",
-        needsProcessing
+        needsProcessing,
+        rotation: 0,
       });
     }
 
@@ -745,6 +779,64 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     return sanitized;
   };
 
+  // Helper function to get rotated image data URL using canvas
+  const getRotatedImage = async (
+    image: ImageItem
+  ): Promise<{ url: string; width: number; height: number }> => {
+    return new Promise((resolve, reject) => {
+      const img = document.createElement("img");
+      img.src = image.url;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return reject(new Error("Canvas context not available"));
+        }
+
+        const rad = (image.rotation * Math.PI) / 180;
+        const absRad = Math.abs(rad);
+
+        // Calculate canvas size based on rotation
+        // For 90/270 degrees, swap width and height
+        const isSwapped = image.rotation % 180 !== 0;
+        const originalWidth = img.width;
+        const originalHeight = img.height;
+
+        const canvasWidth = isSwapped ? originalHeight : originalWidth;
+        const canvasHeight = isSwapped ? originalWidth : originalHeight;
+
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+
+        // Draw white background first to handle transparency
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Translate and rotate context
+        ctx.translate(canvasWidth / 2, canvasHeight / 2);
+        ctx.rotate(rad);
+
+        // Draw the image centered in the rotated context
+        ctx.drawImage(
+          img,
+          -originalWidth / 2,
+          -originalHeight / 2,
+          originalWidth,
+          originalHeight
+        );
+
+        // Convert to JPEG
+        const rotatedUrl = canvas.toDataURL("image/jpeg", 0.8);
+        resolve({ url: rotatedUrl, width: canvasWidth, height: canvasHeight });
+      };
+      img.onerror = (err) => {
+        console.error("Error loading image for rotation:", err);
+        // Fallback: return original URL and dimensions if loading fails
+        resolve({ url: image.url, width: img.width || 100, height: img.height || 100 }); 
+      };
+    });
+  };
+
   // ------------------
   // PDF GENERATION
   // ------------------
@@ -945,91 +1037,160 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             const rowImages = section.images.slice(startIdx, endIdx);
 
             const imageSpacing = SPACING.IMAGE_GAP;
-            const totalSpacing = (imagesPerRow - 1) * imageSpacing;
-            const availableWidth = pdfWidth - totalSpacing;
+            const totalRowSpacing = (rowImages.length - 1) * imageSpacing;
+            const availableWidthForRow = pdfWidth - (SPACING.MARGIN * 2);
 
-            let singleImageWidth: number;
-            let imageHeight: number;
+            // Define target heights based on layout
+            const targetRowHeight = 
+              imagesPerRow === 1 ? 110 :
+              imagesPerRow === 2 ? 90 :
+              70;
 
-            if (imagesPerRow === 1) {
-              // For single images, use a larger portion of the available width
-              singleImageWidth = Math.min(availableWidth * 0.9, 150);
-              imageHeight = 85;
-            } else if (imagesPerRow === 2) {
-              singleImageWidth = Math.min(availableWidth / 2 - 6, 95);
-              imageHeight = 65;
-            } else {
-              singleImageWidth = availableWidth / 3;
-              imageHeight = 45;
-            }
+            // Check for page break before processing the row
+            if (checkForNewPage(targetRowHeight + 20)) { /* Add buffer for captions */ }
 
-            if (checkForNewPage(imageHeight + 15)) {}
+            // Pre-calculate dimensions and gather data for the row
+            const processedRowData = [];
+            let maxCaptionHeight = 0;
+            const maxWidthPerImage = (availableWidthForRow - totalRowSpacing) / imagesPerRow;
 
-            let xPos = SPACING.MARGIN;
-            // Center single images
-            if (imagesPerRow === 1) {
-              xPos = (pdfWidth - singleImageWidth) / 2;
-            }
-
-            for (let i = 0; i < rowImages.length; i++) {
-              const image = rowImages[i];
+            // First pass: collect all rotated dimensions
+            const rowImageDimensions = [];
+            for (const image of rowImages) {
               try {
-                await new Promise<void>((resolve) => {
-                  const imgObj = document.createElement("img");
-                  imgObj.src = image.url;
-                  imgObj.onload = () => {
-                    try {
-                      const aspectRatio = imgObj.width / imgObj.height;
-                      let imgWidth = singleImageWidth;
-                      let imgHeight = imgWidth / aspectRatio;
-
-                      // Calculate the maximum height based on the layout
-                      const maxHeight = imagesPerRow === 1 ? 85 : imagesPerRow === 2 ? 65 : 45;
-                      
-                      // If the calculated height exceeds maxHeight, scale down proportionally
-                      if (imgHeight > maxHeight) {
-                        imgHeight = maxHeight;
-                        imgWidth = imgHeight * aspectRatio;
-                      }
-
-                      // Recalculate xPos for centered single images after aspect ratio adjustment
-                      if (imagesPerRow === 1) {
-                        xPos = (pdfWidth - imgWidth) / 2;
-                      }
-
-                      // Draw white background
-                      pdf.setFillColor(255, 255, 255);
-                      pdf.rect(xPos, y, imgWidth, imgHeight, "F");
-
-                      // Add the image with exact proportions
-                      pdf.addImage(
-                        image.url,
-                        "JPEG",
-                        xPos,
-                        y,
-                        imgWidth,
-                        imgHeight
-                      );
-
-                      // Only increment xPos for multi-image layouts
-                      if (imagesPerRow > 1) {
-                        xPos += imgWidth + imageSpacing;
-                      }
-                    } catch (err) {
-                      console.error("Error adding image to PDF:", err);
-                    }
-                    resolve();
-                  };
-                  imgObj.onerror = () => {
-                    console.error("Error loading image");
-                    resolve();
-                  };
-                });
+                const { url: rotatedUrl, width: rotatedWidth, height: rotatedHeight } = await getRotatedImage(image);
+                if (!rotatedWidth || !rotatedHeight) {
+                  console.error("Skipping image due to missing dimensions after rotation:", image.id);
+                  continue;
+                }
+                rowImageDimensions.push({ rotatedUrl, rotatedWidth, rotatedHeight, aspectRatio: rotatedWidth / rotatedHeight });
               } catch (err) {
-                console.error("Error processing image for PDF:", err);
+                console.error("Error getting rotated dimensions:", err);
+                rowImageDimensions.push(null);
               }
             }
-            y += imageHeight + SPACING.IMAGE_GAP + 5;
+
+            // For 3-column layout, calculate the reference height
+            let referenceHeight = targetRowHeight;
+            if (imagesPerRow === 3) {
+              // Calculate heights if each image was scaled to maxWidthPerImage
+              const scaledHeights = rowImageDimensions
+                .filter(dim => dim !== null)
+                .map(dim => maxWidthPerImage / dim.aspectRatio);
+              
+              // Use the smallest height as reference
+              if (scaledHeights.length > 0) {
+                referenceHeight = Math.min(...scaledHeights);
+                // Ensure minimum height of 40mm and maximum of 100mm
+                referenceHeight = Math.max(40, Math.min(100, referenceHeight));
+              }
+            }
+
+            // Second pass: process images with normalized dimensions
+            for (let i = 0; i < rowImageDimensions.length; i++) {
+              const dimensions = rowImageDimensions[i];
+              const currentImage = rowImages[i];
+              
+              if (!dimensions) {
+                processedRowData.push(null);
+                continue;
+              }
+
+              const { rotatedUrl, aspectRatio } = dimensions;
+              let finalWidth = 0;
+              let finalHeight = 0;
+
+              if (imagesPerRow === 3) {
+                // Use reference height and calculate width based on aspect ratio
+                finalHeight = referenceHeight;
+                finalWidth = referenceHeight * aspectRatio;
+                
+                // If width exceeds maxWidthPerImage, scale down proportionally
+                if (finalWidth > maxWidthPerImage) {
+                  finalWidth = maxWidthPerImage;
+                  finalHeight = maxWidthPerImage / aspectRatio;
+                }
+              } else {
+                // For 1 and 2 column layouts, maintain existing logic
+                let initialWidth = targetRowHeight * aspectRatio;
+                if (initialWidth <= maxWidthPerImage) {
+                  finalHeight = targetRowHeight;
+                  finalWidth = initialWidth;
+                } else {
+                  finalWidth = maxWidthPerImage;
+                  finalHeight = finalWidth / aspectRatio;
+                }
+              }
+
+              // Calculate caption lines and height for this image
+              let currentCaptionHeight = 0;
+              let captionLines: string[] = [];
+              if (currentImage && currentImage.caption && currentImage.caption.trim()) {
+                pdf.setFont("helvetica", "italic");
+                pdf.setFontSize(9);
+                captionLines = pdf.splitTextToSize(currentImage.caption.trim(), finalWidth);
+                currentCaptionHeight = (captionLines.length * 5) + 4;
+                maxCaptionHeight = Math.max(maxCaptionHeight, currentCaptionHeight);
+              }
+
+              processedRowData.push({
+                rotatedUrl,
+                finalWidth,
+                finalHeight,
+                captionLines,
+                captionHeight: currentCaptionHeight
+              });
+            }
+
+            // Calculate total width of processed images
+            const actualTotalRowWidth = processedRowData.reduce((sum, data) => {
+              return sum + (data ? data.finalWidth : 0);
+            }, 0) + totalRowSpacing;
+
+            // Center the row horizontally
+            let currentX = (pdfWidth - actualTotalRowWidth) / 2;
+
+            // Draw the row (Images and Captions)
+            const startY = y;
+            for (const data of processedRowData) {
+              if (!data) continue;
+
+              try {
+                // Draw Image
+                pdf.addImage(
+                  data.rotatedUrl,
+                  "JPEG",
+                  currentX,
+                  startY,
+                  data.finalWidth,
+                  data.finalHeight
+                );
+
+                // Draw Caption
+                if (data.captionLines.length > 0) {
+                  pdf.setFont("helvetica", "italic");
+                  pdf.setFontSize(9);
+                  pdf.setTextColor(100, 100, 100);
+                  const captionStartY = startY + data.finalHeight + 4;
+                  data.captionLines.forEach((line: string, index: number) => {
+                    pdf.text(
+                      line,
+                      currentX + data.finalWidth / 2,
+                      captionStartY + (index * 5),
+                      { align: "center" }
+                    );
+                  });
+                }
+
+                currentX += data.finalWidth + imageSpacing;
+
+              } catch(err) {
+                console.error("Error drawing image/caption in PDF:", err);
+              }
+            }
+
+            // Update Y position for next row
+            y = startY + targetRowHeight + maxCaptionHeight + SPACING.IMAGE_GAP;
           }
         }
         y += SPACING.SECTION_AFTER;
@@ -1045,25 +1206,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       });
 
       // Save with report name
-      const sanitizedFileName = reportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const finalReportName = useDateInName ? previewReportName : reportName;
+      const sanitizedFileName = finalReportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
       pdf.save(`${sanitizedFileName}.pdf`);
       loadingToast.remove();
     } catch (error) {
       console.error("Error generating PDF:", error);
       alert("Error generating PDF. Please try again.");
-    }
-  };
-
-  const handleRename = async () => {
-    if (!tempName.trim() || !reportId) return;
-    try {
-      await indexedDBService.updateReportName(reportId, tempName.trim());
-      setReportName(tempName.trim());
-      setIsRenaming(false);
-      toast.success('Report renamed successfully');
-    } catch (error) {
-      console.error('Error renaming report:', error);
-      toast.error('Failed to rename report. Please try again.');
     }
   };
 
@@ -1110,6 +1259,11 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   onChange={(e) => {
                     const newName = e.target.value;
                     setReportName(newName);
+                    // Update preview immediately if using date in name
+                    if (useDateInName && newName) {
+                      const dateFormattedName = getDefaultReportName(reportStartDate, reportEndDate, newName);
+                      setPreviewReportName(dateFormattedName);
+                    }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
                   placeholder="Enter report name"
@@ -1189,6 +1343,20 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       if (useDateInName) {
                         setDateFieldsConfigured(true);
                       }
+                      
+                      // Make sure we save the report immediately to lock in the name
+                      saveReport(true);
+                      
+                      // If there are any existing sections with default names, update them
+                      if (sections.length > 0) {
+                        const updatedSections = sections.map(section => {
+                          if (section.title === "New Section" || section.title === "Summary") {
+                            return { ...section, title: reportName };
+                          }
+                          return section;
+                        });
+                        setSections(updatedSections);
+                      }
                     }
                   }}
                   disabled={!reportName.trim()}
@@ -1238,55 +1406,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               </h1>
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 dark:text-gray-400">|</span>
-                {isRenaming ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={tempName}
-                      onChange={(e) => setTempName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleRename();
-                        } else if (e.key === 'Escape') {
-                          setIsRenaming(false);
-                          setTempName(reportName);
-                        }
-                      }}
-                      className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-800 dark:text-white"
-                      autoFocus
-                    />
-                    <button
-                      onClick={handleRename}
-                      className="p-1.5 text-green-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
-                      title="Save name"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsRenaming(false);
-                        setTempName(reportName);
-                      }}
-                      className="p-1.5 text-gray-500 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
-                      title="Cancel"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 dark:text-gray-300">
-                      {reportName}
-                    </span>
-                    <button
-                      onClick={() => setIsRenaming(true)}
-                      className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-md transition-colors"
-                      title="Rename report"
-                    >
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
+                {useDateInName && previewReportName ? previewReportName : reportName}
               </div>
             </div>
             <div className="flex items-center gap-4">
@@ -1396,11 +1516,6 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     <label htmlFor="reportDateInName" className="text-sm text-gray-600 dark:text-gray-300">
                       Include date in filename
                     </label>
-                  </div>
-                )}
-                {useDateInName && !dateFieldsConfigured && (
-                  <div className="text-sm text-gray-600 dark:text-gray-300 px-3 py-1 bg-gray-100 dark:bg-slate-700 rounded">
-                    {previewReportName || 'Preview'}
                   </div>
                 )}
               </div>
@@ -1551,21 +1666,52 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   </div>
 
                   {/* Image Grid */}
-                  <div className={`grid gap-4 ${
+                  <div className={
                     section.imageLayout.imagesPerRow === 1 
-                      ? 'grid-cols-1' 
+                      ? 'flex flex-col items-center gap-3' 
                       : section.imageLayout.imagesPerRow === 2 
-                        ? 'grid-cols-2' 
-                        : 'grid-cols-3'
-                  }`}>
+                        ? section.images.length === 1 
+                          ? 'flex justify-center' 
+                          : 'grid grid-cols-2 gap-3' 
+                        : section.images.length === 1 
+                          ? 'flex justify-center' 
+                          : section.images.length === 2 
+                            ? 'flex justify-center gap-6 mx-auto' 
+                            : 'grid grid-cols-3 gap-3'
+                  }>
                     {section.images.map((image) => (
-                      <div key={image.id} className="relative group aspect-[4/3]">
-                        <img
-                          src={image.url}
-                          alt={image.caption || 'Report image'}
-                          className="w-full h-full object-contain rounded-lg shadow-sm"
-                          style={{ aspectRatio: '4/3' }}
-                        />
+                      <div key={image.id} className={`relative group ${
+                        section.imageLayout.imagesPerRow > 1 && section.images.length === 1
+                          ? 'max-w-md w-full'
+                          : section.imageLayout.imagesPerRow === 3 && section.images.length === 2
+                            ? 'max-w-xs w-full'
+                            : 'w-full'
+                      }`}>
+                        <div 
+                          className="aspect-[4/3] flex items-center justify-center overflow-hidden bg-white rounded-lg shadow-sm w-full"
+                          style={{
+                            width: "100%",
+                            height: section.imageLayout.imagesPerRow === 1 
+                              ? "480px"
+                              : section.imageLayout.imagesPerRow === 2
+                                ? "320px"
+                                : "220px"
+                          }}
+                        >
+                          <img
+                            src={image.url}
+                            alt={image.caption || 'Report image'}
+                            className="max-w-full max-h-full object-contain mx-auto"
+                            style={{
+                              transform: `rotate(${image.rotation}deg)`,
+                              maxHeight: section.imageLayout.imagesPerRow === 1 
+                                ? "460px"
+                                : section.imageLayout.imagesPerRow === 2
+                                  ? "300px"
+                                  : "200px"
+                            }}
+                          />
+                        </div>
                         {image.needsProcessing && (
                           <div className="absolute top-2 right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded">
                             Needs processing
@@ -1573,6 +1719,20 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         )}
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="hidden group-hover:flex gap-2">
+                            <button
+                              onClick={() => handleImageRotate(section.id, image.id, 'left')}
+                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
+                              title="Rotate Left"
+                            >
+                              <RotateCcw className="h-4 w-4 text-blue-500" />
+                            </button>
+                            <button
+                              onClick={() => handleImageRotate(section.id, image.id, 'right')}
+                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
+                              title="Rotate Right"
+                            >
+                              <RotateCw className="h-4 w-4 text-blue-500" />
+                            </button>
                             <button
                               onClick={() => removeImage(section.id, image.id)}
                               className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-red-50 dark:hover:bg-red-900/20 hover:scale-105 transition-all duration-200"
