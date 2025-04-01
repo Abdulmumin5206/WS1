@@ -691,23 +691,23 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             break;
           case "p":
           case "div":
-            // Detect bullet-like characters at start
-            if (
-              element.textContent?.trimStart().match(/^([•\-○■])/)
-            ) {
+            // Detect bullet-like or dash characters at start
+            const textContentTrimmed = element.textContent?.trimStart();
+            if (textContentTrimmed?.match(/^([•○■])/)) { // Existing bullet check
               newStyle.list = "bullet";
               newStyle.isListItem = true;
-              element.textContent = element.textContent.replace(
-                /^(\s*[•\-○■]+)/,
-                ""
-              );
+              element.textContent = textContentTrimmed.replace(/^(\s*[•○■]+)/, "");
+            } else if (textContentTrimmed?.match(/^(\-)/)) { // New dash check
+              newStyle.list = "dash";
+              newStyle.isListItem = true;
+              element.textContent = textContentTrimmed.replace(/^(\s*\-+)/, "");
             }
             if (element.style.textAlign) {
               newStyle.align = element.style.textAlign;
             }
             break;
           case "ul":
-            newStyle.list = "bullet";
+            newStyle.list = "bullet"; // Default for UL
             newNestLevel += 1;
             break;
           case "ol":
@@ -716,16 +716,21 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             break;
           case "li":
             newStyle.isListItem = true;
-            if (
-              element.textContent?.trimStart().match(/^([•\-○■])/)
-            ) {
-              newStyle.list = "bullet";
-              element.textContent = element.textContent.replace(
-                /^(\s*[•\-○■]+)/,
-                ""
-              );
+            // Use the list style inherited from parent (ul/ol) or detect standalone
+            if (!newStyle.list) { // If not already set by ul/ol
+                const liTextContentTrimmed = element.textContent?.trimStart();
+                if (liTextContentTrimmed?.match(/^([•○■])/)) {
+                    newStyle.list = "bullet";
+                    element.textContent = liTextContentTrimmed.replace(/^(\s*[•○■]+)/, "");
+                } else if (liTextContentTrimmed?.match(/^(\-)/)) {
+                    newStyle.list = "dash";
+                    element.textContent = liTextContentTrimmed.replace(/^(\s*\-+)/, "");
+                } else {
+                    // Default to bullet if standalone li doesn't match others
+                    newStyle.list = "bullet";
+                }
             }
-            newStyle.nestLevel = newNestLevel;
+            newStyle.nestLevel = newNestLevel; // Set nest level correctly
             break;
           case "br":
             // Explicit line break – push a newline item.
@@ -935,6 +940,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         pdf.setTextColor(40, 40, 40);
 
         const contentItems = parseHtml(section.content);
+        let listCounters: { [key: number]: number } = {}; // Store counters for nested ordered lists
 
         for (const item of contentItems) {
           // If it's an explicit line break
@@ -947,9 +953,17 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
           let text = sanitizeTextForPDF(item.text);
 
-          // Remove bullet characters if it's a list
-          if (item.style.isListItem) {
-            text = text.replace(/^[\s\u00A0]*[•\-\*\+○■⦿⚫⚬◉◆◇◈☙➤➢➣➔➝➜➛➙➞❯❱➝➞☛☞➤→]+[\s\u00A0]*/m, "");
+          // Reset deeper list counters when a shallower list item is encountered
+          const currentNestLevel = item.style.nestLevel || 0;
+          for (const level in listCounters) {
+            if (parseInt(level) > currentNestLevel) {
+              delete listCounters[parseInt(level)];
+            }
+          }
+
+          // Increment list counter if it's an ordered list item
+          if (item.style.list === "ordered" && item.style.isListItem) {
+            listCounters[currentNestLevel] = (listCounters[currentNestLevel] || 0) + 1;
           }
 
           // Setup style
@@ -984,13 +998,19 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
           // If it's a list item, handle bullet or numbering
           if (item.style.isListItem) {
             const nestIndent = (item.style.nestLevel || 0) * 4 + SPACING.MARGIN;
+            let listMarker = "";
             if (item.style.list === "bullet") {
-              pdf.text("•", nestIndent, y);
+              listMarker = "•";
               xPos = nestIndent + 5;
-            } else if (item.style.list === "ordered") {
-              pdf.text("-", nestIndent, y);
+            } else if (item.style.list === "dash") { // Handle new dash list
+              listMarker = "-";
               xPos = nestIndent + 5;
+            } else if (item.style.list === "ordered") { // Fix ordered list numbering
+              const counter = listCounters[currentNestLevel] || 1;
+              listMarker = `${counter}.`;
+              xPos = nestIndent + 5 + (listMarker.length * 1); // Adjust xPos based on number length
             }
+            pdf.text(listMarker, nestIndent, y);
           }
 
           const availableWidth =
