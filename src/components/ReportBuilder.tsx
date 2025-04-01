@@ -108,6 +108,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   });
   const [isInitialized, setIsInitialized] = useState(!!initialData?.name || !!reportId);
   const [useDateInName, setUseDateInName] = useState(false);
+  const [previewReportName, setPreviewReportName] = useState("");
+  const [dateFieldsConfigured, setDateFieldsConfigured] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -183,6 +185,17 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     return contentSize + imageSize;
   };
 
+  // Update report name based on date checkbox
+  useEffect(() => {
+    if (useDateInName) {
+      const baseName = reportName.split('_')[0]; // Get base name without date
+      const dateFormattedName = getDefaultReportName(reportStartDate, reportEndDate, baseName);
+      setPreviewReportName(dateFormattedName);
+    } else {
+      setPreviewReportName("");
+    }
+  }, [useDateInName, reportName, reportStartDate, reportEndDate]);
+
   // Save function
   const saveReport = async (forceSave: boolean = false) => {
     if (!reportName && !forceSave) return;
@@ -201,14 +214,17 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         currentReportIdRef.current = `report_${Date.now()}`;
       }
 
+      // Apply date to report name if option is enabled
+      const finalReportName = useDateInName ? previewReportName : reportName;
+
       const currentReport = {
         id: currentReportIdRef.current,
-        name: reportName,
+        name: finalReportName,
         title: reportTitle,
         lastModified: new Date().toISOString(),
         size: reportSize,
         content: {
-          name: reportName,
+          name: finalReportName,
           title: reportTitle,
           startDate: reportStartDate,
           endDate: reportEndDate,
@@ -249,8 +265,9 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     
     const start = new Date(startDate);
     const end = new Date(endDate);
-    const startMonth = start.toLocaleString('default', { month: 'long' });
-    const endMonth = end.toLocaleString('default', { month: 'long' });
+    
+    const startMonth = start.toLocaleString('default', { month: 'short' });
+    const endMonth = end.toLocaleString('default', { month: 'short' });
     const startYear = start.getFullYear();
     const endYear = end.getFullYear();
     
@@ -816,7 +833,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(12);
         pdf.setTextColor(60, 60, 60);
-        pdf.text(sanitizeTextForPDF(section.title), SPACING.MARGIN, y);
+        const sanitizedSectionTitle = sanitizeTextForPDF(section.title);
+        pdf.text(sanitizedSectionTitle, SPACING.MARGIN, y);
         y += SPACING.SECTION_TITLE_AFTER + 5;
 
         // Content
@@ -1111,9 +1129,47 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="useDateInName" className="text-sm text-gray-700 dark:text-gray-300">
-                  Include current date in report name
+                  Include date in report name
                 </label>
               </div>
+
+              {useDateInName && (
+                <div className="mt-2 p-3 bg-gray-50 dark:bg-slate-700 rounded-md">
+                  <div className="mb-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Date Range for Filename
+                    </label>
+                    <div className="flex gap-3 items-center">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                          From:
+                        </label>
+                        <input
+                          type="date"
+                          value={reportStartDate}
+                          onChange={(e) => setReportStartDate(e.target.value)}
+                          className="border border-gray-200 dark:border-gray-600 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-gray-500 dark:text-gray-400">
+                          To:
+                        </label>
+                        <input
+                          type="date"
+                          value={reportEndDate}
+                          onChange={(e) => setReportEndDate(e.target.value)}
+                          className="border border-gray-200 dark:border-gray-600 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="font-medium">Preview: </span>
+                    {previewReportName || 'Enter a report name'}
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 mt-6">
                 <button
@@ -1130,6 +1186,9 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     if (reportName.trim()) {
                       setShowNamePrompt(false);
                       setIsInitialized(true);
+                      if (useDateInName) {
+                        setDateFieldsConfigured(true);
+                      }
                     }
                   }}
                   disabled={!reportName.trim()}
@@ -1290,28 +1349,60 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               className="w-full p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md text-2xl font-bold mb-2"
               placeholder="Report Title"
             />
-            <div className="flex gap-4 items-center mt-2">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 dark:text-gray-400">
-                  Start Date:
-                </label>
-                <input
-                  type="date"
-                  value={reportStartDate}
-                  onChange={(e) => setReportStartDate(e.target.value)}
-                  className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 dark:text-gray-400">
-                  End Date:
-                </label>
-                <input
-                  type="date"
-                  value={reportEndDate}
-                  onChange={(e) => setReportEndDate(e.target.value)}
-                  className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
-                />
+            
+            <div className="flex gap-4 items-center justify-between mt-2">
+              {(!useDateInName || !dateFieldsConfigured) && (
+                <div className="flex gap-4 items-center">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">
+                      Start Date:
+                    </label>
+                    <input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                      className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">
+                      End Date:
+                    </label>
+                    <input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                      className="border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md p-1 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-3 ml-auto">
+                {(!useDateInName || !dateFieldsConfigured) && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="reportDateInName"
+                      checked={useDateInName}
+                      onChange={(e) => {
+                        setUseDateInName(e.target.checked);
+                        if (!e.target.checked) {
+                          setDateFieldsConfigured(false);
+                        }
+                      }}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="reportDateInName" className="text-sm text-gray-600 dark:text-gray-300">
+                      Include date in filename
+                    </label>
+                  </div>
+                )}
+                {useDateInName && !dateFieldsConfigured && (
+                  <div className="text-sm text-gray-600 dark:text-gray-300 px-3 py-1 bg-gray-100 dark:bg-slate-700 rounded">
+                    {previewReportName || 'Preview'}
+                  </div>
+                )}
               </div>
             </div>
           </div>

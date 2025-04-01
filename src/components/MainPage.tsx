@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Download, Moon, Sun, BarChart2, BookOpen, Star, Search, Filter, FolderPlus, Calendar } from 'lucide-react';
+import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Moon, Sun, BarChart2, BookOpen, Star, Search, Filter, FolderPlus, Calendar } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ReportBuilder from './ReportBuilder';
 import { indexedDBService } from '@/utils/indexedDB';
 import { toast } from 'react-hot-toast';
 import { useTheme } from '@/contexts/ThemeContext';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 
 interface RecentReport {
   id: string;
@@ -133,52 +131,6 @@ const MainPage: React.FC = () => {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-  };
-
-  const generatePDF = async (report: RecentReport) => {
-    try {
-      // Create a temporary ReportBuilder instance to generate PDF
-      const tempReportBuilder = document.createElement('div');
-      tempReportBuilder.innerHTML = `
-        <div class="report-content">
-          <h1>${report.title}</h1>
-          <div class="report-date">${formatDate(report.lastModified)}</div>
-          ${report.content.sections.map(section => `
-            <div class="section">
-              <h2>${section.title}</h2>
-              <div class="content">${section.content}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-      
-      // Use html2canvas to convert the content to an image
-      const canvas = await html2canvas(tempReportBuilder, {
-        scale: 2,
-        useCORS: true,
-        logging: false
-      });
-
-      // Create PDF
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-
-      // Add the image to the PDF
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-
-      // Save the PDF
-      pdf.save(`${report.name}.pdf`);
-      toast.success('PDF generated successfully!');
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast.error('Failed to generate PDF. Please try again.');
-    }
   };
 
   // Filter reports based on search and filter
@@ -536,13 +488,6 @@ const MainPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => generatePDF(report)}
-                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md transition-colors"
-                            title="Download PDF"
-                          >
-                            <Download className="h-5 w-5" />
-                          </button>
                           <button
                             onClick={() => confirmDelete(report.id)}
                             className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
