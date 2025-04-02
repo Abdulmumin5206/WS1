@@ -22,7 +22,7 @@ import {
   X,
   Edit2,
   RotateCw,
-  RotateCcw
+  Crop,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -35,6 +35,7 @@ import RichTextEditor from "./RichTextEditor";
 import { useTheme } from "@/contexts/ThemeContext";
 import { indexedDBService } from '@/utils/indexedDB';
 import { toast } from 'react-hot-toast';
+import ImageCropper from "./ImageCropper";
 
 interface ImageItem {
   id: string;
@@ -111,6 +112,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   const [useDateInName, setUseDateInName] = useState(false);
   const [previewReportName, setPreviewReportName] = useState("");
   const [dateFieldsConfigured, setDateFieldsConfigured] = useState(false);
+  const [croppingImage, setCroppingImage] = useState<{ sectionId: number; imageId: string; url: string } | null>(null);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -842,6 +844,31 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     });
   };
 
+  // Add this new function for handling image cropping
+  const handleImageCrop = (sectionId: number, imageId: string, imageUrl: string) => {
+    setCroppingImage({ sectionId, imageId, url: imageUrl });
+  };
+
+  const handleCropComplete = (croppedImageUrl: string) => {
+    if (!croppingImage) return;
+
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === croppingImage.sectionId
+          ? {
+              ...section,
+              images: section.images.map((img) =>
+                img.id === croppingImage.imageId
+                  ? { ...img, url: croppedImageUrl }
+                  : img
+              ),
+            }
+          : section
+      )
+    );
+    setCroppingImage(null);
+  };
+
   // ------------------
   // PDF GENERATION
   // ------------------
@@ -1414,6 +1441,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         </div>
       )}
 
+      {croppingImage && (
+        <ImageCropper
+          imageUrl={croppingImage.url}
+          onCrop={handleCropComplete}
+          onCancel={() => setCroppingImage(null)}
+        />
+      )}
+
       <main className="container mx-auto py-8 px-4 max-w-4xl">
         <div
           className="bg-white dark:bg-slate-800 shadow-sm rounded-lg p-6 mb-6"
@@ -1740,18 +1775,18 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                           <div className="hidden group-hover:flex gap-2">
                             <button
-                              onClick={() => handleImageRotate(section.id, image.id, 'left')}
-                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
-                              title="Rotate Left"
-                            >
-                              <RotateCcw className="h-4 w-4 text-blue-500" />
-                            </button>
-                            <button
                               onClick={() => handleImageRotate(section.id, image.id, 'right')}
                               className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
-                              title="Rotate Right"
+                              title="Rotate"
                             >
                               <RotateCw className="h-4 w-4 text-blue-500" />
+                            </button>
+                            <button
+                              onClick={() => handleImageCrop(section.id, image.id, image.url)}
+                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
+                              title="Crop image"
+                            >
+                              <Crop className="h-4 w-4 text-blue-500" />
                             </button>
                             <button
                               onClick={() => removeImage(section.id, image.id)}

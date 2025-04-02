@@ -14,9 +14,11 @@ import {
   List,
   ListOrdered,
   Indent,
-  Outdent
+  Outdent,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import ImageCropper from "./ImageCropper";
+import { useState, ChangeEvent } from "react";
 
 interface RichTextEditorProps {
   content: string;
@@ -26,6 +28,8 @@ interface RichTextEditorProps {
 
 const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, placeholder }) => {
   const { theme } = useTheme();
+  const [showCropper, setShowCropper] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const editor = useEditor({
     extensions: [
@@ -59,6 +63,25 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ content, onChange, plac
   });
 
   if (!editor) return null;
+
+  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const imageUrl = event.target?.result as string;
+      setSelectedImage(imageUrl);
+      setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = (croppedImageUrl: string) => {
+    editor.chain().focus().insertContent({ type: 'image', attrs: { src: croppedImageUrl } }).run();
+    setShowCropper(false);
+    setSelectedImage(null);
+  };
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-md relative">
