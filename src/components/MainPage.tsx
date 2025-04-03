@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Moon, Sun, BarChart2, BookOpen, Star, Search, Filter, FolderPlus, Calendar } from 'lucide-react';
+import { FileText, Plus, Clock, FolderOpen, Trash2, Edit2, X, Edit, Moon, Sun, BarChart2, BookOpen, Star, Search, Filter, FolderPlus, Calendar, CheckSquare, Square } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import ReportBuilder from './ReportBuilder';
 import { indexedDBService } from '@/utils/indexedDB';
@@ -31,27 +31,35 @@ const MainPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'recent' | 'favorites'>('all');
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   useEffect(() => {
     loadReports();
   }, []);
 
-  useEffect(() => {
-    const savedFavorites = localStorage.getItem('favoriteReports');
-    if (savedFavorites) {
-      setFavorites(JSON.parse(savedFavorites));
-    }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('favoriteReports', JSON.stringify(favorites));
-  }, [favorites]);
-
   const loadReports = async () => {
     try {
       setIsLoading(true);
       const reports = await indexedDBService.getAllReports();
-      setRecentReports(reports.sort((a, b) => 
+      // Calculate actual size for each report
+      const reportsWithSize = reports.map(report => ({
+        ...report,
+        size: calculateReportSize(report)
+      }));
+      // Load favorites from localStorage
+      const savedFavorites = localStorage.getItem('favoriteReports');
+      if (savedFavorites) {
+        const parsedFavorites = JSON.parse(savedFavorites);
+        // Filter out favorites that no longer exist in reports
+        const validFavorites = parsedFavorites.filter((id: string) => 
+          reportsWithSize.some(report => report.id === id)
+        );
+        setFavorites(validFavorites);
+        // Update localStorage with cleaned up favorites
+        localStorage.setItem('favoriteReports', JSON.stringify(validFavorites));
+      }
+      setRecentReports(reportsWithSize.sort((a, b) => 
         new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
       ));
     } catch (error) {
@@ -59,6 +67,26 @@ const MainPage: React.FC = () => {
       toast.error('Failed to load reports. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const calculateReportSize = (report: RecentReport): number => {
+    try {
+      // Calculate size of the report content
+      const contentSize = new Blob([JSON.stringify(report.content)]).size;
+      // Add size of other report properties
+      const metadataSize = new Blob([
+        JSON.stringify({
+          id: report.id,
+          name: report.name,
+          title: report.title,
+          lastModified: report.lastModified
+        })
+      ]).size;
+      return contentSize + metadataSize;
+    } catch (error) {
+      console.error('Error calculating report size:', error);
+      return 0;
     }
   };
 
@@ -86,6 +114,12 @@ const MainPage: React.FC = () => {
     if (!showDeleteConfirm) return;
     try {
       await indexedDBService.deleteReport(showDeleteConfirm);
+      // Remove from favorites if it was favorited
+      setFavorites(prev => {
+        const newFavorites = prev.filter(id => id !== showDeleteConfirm);
+        localStorage.setItem('favoriteReports', JSON.stringify(newFavorites));
+        return newFavorites;
+      });
       await loadReports();
       setShowDeleteConfirm(null);
       toast.success('Report deleted successfully');
@@ -110,7 +144,7 @@ const MainPage: React.FC = () => {
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
   // Filter reports based on search and filter
@@ -121,18 +155,29 @@ const MainPage: React.FC = () => {
     if (selectedFilter === 'favorites') {
       return matchesSearch && favorites.includes(report.id);
     }
+    
+    if (selectedFilter === 'recent') {
+      const reportDate = new Date(report.lastModified);
+      const fiveHoursAgo = new Date();
+      fiveHoursAgo.setHours(fiveHoursAgo.getHours() - 5);
+      return matchesSearch && reportDate >= fiveHoursAgo;
+    }
+    
     return matchesSearch;
   });
 
   const toggleFavorite = (reportId: string) => {
-    setFavorites(prev => 
-      prev.includes(reportId) 
+    setFavorites(prev => {
+      const newFavorites = prev.includes(reportId)
         ? prev.filter(id => id !== reportId)
-        : [...prev, reportId]
-    );
+        : [...prev, reportId];
+      // Immediately save to localStorage
+      localStorage.setItem('favoriteReports', JSON.stringify(newFavorites));
+      return newFavorites;
+    });
   };
 
-  // Calculate quick stats
+  // Calculate quick stats with accurate sizes
   const stats = {
     totalReports: recentReports.length,
     totalSize: recentReports.reduce((acc, report) => acc + (report.size || 0), 0),
@@ -172,6 +217,46 @@ const MainPage: React.FC = () => {
   // Sort groups in chronological order
   const groupOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older'];
   const sortedGroups = groupOrder.filter(key => groupedReports[key]?.length > 0);
+
+  const toggleSelectAll = () => {
+    if (selectedReports.size === filteredReports.length) {
+      setSelectedReports(new Set());
+    } else {
+      setSelectedReports(new Set(filteredReports.map(report => report.id)));
+    }
+  };
+
+  const toggleSelectReport = (reportId: string) => {
+    const newSelected = new Set(selectedReports);
+    if (newSelected.has(reportId)) {
+      newSelected.delete(reportId);
+    } else {
+      newSelected.add(reportId);
+    }
+    setSelectedReports(newSelected);
+  };
+
+  const handleBulkDelete = async () => {
+    try {
+      const reportIds = Array.from(selectedReports);
+      for (const reportId of reportIds) {
+        await indexedDBService.deleteReport(reportId);
+      }
+      // Remove deleted reports from favorites
+      setFavorites(prev => {
+        const newFavorites = prev.filter(id => !reportIds.includes(id));
+        localStorage.setItem('favoriteReports', JSON.stringify(newFavorites));
+        return newFavorites;
+      });
+      await loadReports();
+      setSelectedReports(new Set());
+      setShowBulkDeleteConfirm(false);
+      toast.success('Selected reports deleted successfully');
+    } catch (error) {
+      console.error('Error deleting reports:', error);
+      toast.error('Failed to delete some reports. Please try again.');
+    }
+  };
 
   if (showReportBuilder) {
     return (
@@ -235,6 +320,34 @@ const MainPage: React.FC = () => {
                 className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-md"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Delete Selected Reports
+            </h3>
+            <p className="text-gray-600 dark:text-gray-300 mb-6">
+              Are you sure you want to delete {selectedReports.size} selected report{selectedReports.size !== 1 ? 's' : ''}? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-md"
+              >
+                Delete {selectedReports.size} Report{selectedReports.size !== 1 ? 's' : ''}
               </button>
             </div>
           </div>
@@ -387,6 +500,38 @@ const MainPage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-6">
+              {/* Reports List Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md"
+                    title={selectedReports.size === filteredReports.length ? "Deselect All" : "Select All"}
+                  >
+                    {selectedReports.size === filteredReports.length ? (
+                      <CheckSquare className="w-5 h-5 text-blue-600" />
+                    ) : (
+                      <Square className="w-5 h-5 text-gray-400" />
+                    )}
+                  </button>
+                  {selectedReports.size > 0 && (
+                    <button
+                      onClick={() => setShowBulkDeleteConfirm(true)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-md text-sm"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Selected ({selectedReports.size})
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-gray-400" />
+                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+                    All Reports
+                  </h2>
+                </div>
+              </div>
+              
               {sortedGroups.map((groupKey) => (
                 <div key={groupKey}>
                   <div className="flex items-center gap-2 mb-3">
@@ -399,10 +544,21 @@ const MainPage: React.FC = () => {
                     {groupedReports[groupKey].map((report) => (
                       <div
                         key={report.id}
-                        className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
+                        className={`group flex items-center justify-between p-4 bg-white dark:bg-slate-800 rounded-lg shadow-sm hover:shadow-md transition-shadow ${
+                          selectedReports.has(report.id) ? 'ring-2 ring-blue-500' : ''
+                        }`}
                       >
-                        <div className="flex items-center flex-1">
-                          <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-3" />
+                        <div className="flex items-center gap-4 flex-1">
+                          <button
+                            onClick={() => toggleSelectReport(report.id)}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+                          >
+                            {selectedReports.has(report.id) ? (
+                              <CheckSquare className="w-4 h-4 text-blue-600" />
+                            ) : (
+                              <Square className="w-4 h-4 text-gray-400" />
+                            )}
+                          </button>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <h3 

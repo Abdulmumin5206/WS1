@@ -72,10 +72,13 @@ interface ReportBuilderProps {
 }
 
 const TITLE_COLORS = [
-  { name: "Default", value: "#000000", preview: "#000000" },  // Default black
-  { name: "Ocean Blue", value: "#3b82f6", preview: "#3b82f6" },
-  { name: "Emerald", value: "#059669", preview: "#059669" },
-  { name: "Royal Purple", value: "#7c3aed", preview: "#7c3aed" }
+  { name: "Default", value: "#000000", preview: "#000000", isDefault: true },   // Default black
+  { name: "Slate", value: "#64748b", preview: "#64748b" },     // Modern slate gray
+  { name: "Sky", value: "#0ea5e9", preview: "#0ea5e9" },       // Modern sky blue
+  { name: "Sage", value: "#84cc16", preview: "#84cc16" },      // Modern sage green
+  { name: "Rose", value: "#f43f5e", preview: "#f43f5e" },      // Modern rose red
+  { name: "Amber", value: "#f59e0b", preview: "#f59e0b" },     // Modern amber
+  { name: "Violet", value: "#8b5cf6", preview: "#8b5cf6" }     // Modern violet
 ];
 
 const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, onClose }) => {
@@ -225,16 +228,54 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
   // Save function
   const saveReport = async (forceSave: boolean = false) => {
-    if (!reportName && !forceSave) return;
+    if (!reportName && !forceSave && !showNamePrompt) {
+      setShowNamePrompt(true);
+      return;
+    }
+
+    if (showNamePrompt) {
+      if (!newReportName.trim()) {
+        toast.error("Please enter a report name");
+        return;
+      }
+      setReportName(newReportName);
+      setShowNamePrompt(false);
+    }
+
+    setIsSaving(true);
+    setSaveStatus({ isSaving: true, message: "Saving report...", type: "" });
 
     try {
-      setSaveStatus({
-        isSaving: true,
-        message: 'Saving...',
-        type: ''
-      });
+      // Compress all images before saving
+      const compressedSections = await Promise.all(
+        sections.map(async (section) => {
+          const compressedImages = await Promise.all(
+            section.images.map(async (image) => {
+              try {
+                // Only compress if it's a data URL
+                if (image.url.startsWith('data:')) {
+                  const compressedUrl = await compressImageForStorage(image.url);
+                  return { ...image, url: compressedUrl };
+                }
+                return image;
+              } catch (error) {
+                console.error("Error compressing image:", error);
+                return image; // Keep original if compression fails
+              }
+            })
+          );
+          return { ...section, images: compressedImages };
+        })
+      );
 
-      const reportSize = calculateReportSize(sections);
+      const reportData = {
+        name: reportName,
+        title: reportTitle,
+        startDate: reportStartDate,
+        endDate: reportEndDate,
+        sections: compressedSections,
+        titleColor: reportTitleColor
+      };
 
       if (!currentReportIdRef.current) {
         currentReportIdRef.current = `report_${Date.now()}`;
@@ -248,14 +289,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         title: reportTitle,
         titleColor: reportTitleColor,
         lastModified: new Date().toISOString(),
-        size: reportSize,
+        size: calculateReportSize(compressedSections),
         content: {
           name: finalReportName,
           title: reportTitle,
           titleColor: reportTitleColor,
           startDate: reportStartDate,
           endDate: reportEndDate,
-          sections: sections,
+          sections: compressedSections,
         },
       };
 
@@ -281,7 +322,55 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         message: 'Failed to save',
         type: 'error'
       });
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  // Compress image for storage in IndexedDB
+  const compressImageForStorage = async (imageUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        
+        if (!ctx) {
+          reject(new Error("Canvas context not available"));
+          return;
+        }
+        
+        // Calculate dimensions for compression
+        let width = img.width;
+        let height = img.height;
+        
+        // If image is larger than 1200px in any dimension, reduce it proportionally
+        const maxDimension = 1200;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw image with white background (for transparent PNGs)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Convert to JPEG with 0.7 quality for storage (good balance between size and quality)
+        const compressedUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(compressedUrl);
+      };
+      img.onerror = () => reject(new Error("Failed to load image for compression"));
+      img.src = imageUrl;
+    });
   };
 
   // Update the getDefaultReportName function
@@ -1563,9 +1652,11 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                 type="text"
                 value={reportTitle}
                 onChange={(e) => setReportTitle(e.target.value)}
-                className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md text-2xl font-bold"
+                className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-2xl font-bold"
                 placeholder="Report Title"
-                style={{ color: reportTitleColor }}
+                style={{ 
+                  color: theme === 'dark' && reportTitleColor === '#000000' ? '#ffffff' : reportTitleColor
+                }}
               />
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -1583,6 +1674,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       }`}
                       style={{ backgroundColor: color.preview }}
                     >
+                      {color.isDefault && (
+                        <span className="absolute inset-0 flex items-center justify-center text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                          </svg>
+                        </span>
+                      )}
                       <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
                         {color.name}
                       </span>
@@ -1679,9 +1777,11 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         type="text"
                         value={section.title}
                         onChange={(e) => handleTitleChange(section.id, e.target.value)}
-                        className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded-md text-lg font-semibold"
+                        className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-lg font-semibold"
                         placeholder="Section title..."
-                        style={{ color: section.titleColor || reportTitleColor }}
+                        style={{ 
+                          color: theme === 'dark' && (section.titleColor || reportTitleColor) === '#000000' ? '#ffffff' : (section.titleColor || reportTitleColor)
+                        }}
                       />
                       <div className="flex items-center gap-2">
                         <label className="text-xs text-gray-500 dark:text-gray-400">
@@ -1707,6 +1807,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                               }`}
                               style={{ backgroundColor: color.preview }}
                             >
+                              {color.isDefault && (
+                                <span className="absolute inset-0 flex items-center justify-center text-white">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                                  </svg>
+                                </span>
+                              )}
                               <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
                                 {color.name}
                               </span>
