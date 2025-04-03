@@ -26,8 +26,6 @@ const MainPage: React.FC = () => {
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const [showReportBuilder, setShowReportBuilder] = useState(false);
   const [selectedReport, setSelectedReport] = useState<RecentReport | null>(null);
-  const [editingReportId, setEditingReportId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState<string>("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -78,24 +76,6 @@ const MainPage: React.FC = () => {
   const createNewReport = () => {
     setSelectedReport(null);
     setShowReportBuilder(true);
-  };
-
-  const startRename = (report: RecentReport) => {
-    setEditingReportId(report.id);
-    setEditingTitle(report.name);
-  };
-
-  const handleRename = async () => {
-    if (!editingReportId || !editingTitle.trim()) return;
-    try {
-      await indexedDBService.updateReportName(editingReportId, editingTitle.trim());
-      await loadReports();
-      setEditingReportId(null);
-      toast.success('Report renamed successfully');
-    } catch (error) {
-      console.error('Error renaming report:', error);
-      toast.error('Failed to rename report. Please try again.');
-    }
   };
 
   const confirmDelete = (reportId: string) => {
@@ -424,63 +404,25 @@ const MainPage: React.FC = () => {
                         <div className="flex items-center flex-1">
                           <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-3" />
                           <div className="flex-1">
-                            {editingReportId === report.id ? (
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="text"
-                                  value={editingTitle}
-                                  onChange={(e) => setEditingTitle(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      handleRename();
-                                    }
-                                  }}
-                                  className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-slate-800 dark:text-white"
-                                  autoFocus
-                                />
-                                <button
-                                  onClick={handleRename}
-                                  className="p-1 text-green-600 hover:text-green-700"
-                                  title="Save name"
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => setEditingReportId(null)}
-                                  className="p-1 text-gray-500 hover:text-gray-700"
-                                  title="Cancel"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2">
-                                <h3 
-                                  className="font-medium text-gray-800 dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
-                                  onClick={() => handleOpenReport(report)}
-                                >
-                                  {report.name}
-                                </h3>
-                                <button
-                                  onClick={() => startRename(report)}
-                                  className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md transition-colors"
-                                  title="Rename report"
-                                >
-                                  <Edit2 className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => toggleFavorite(report.id)}
-                                  className={`p-1.5 rounded-md transition-colors ${
-                                    favorites.includes(report.id)
-                                      ? 'text-yellow-500 hover:text-yellow-600'
-                                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700'
-                                  }`}
-                                  title={favorites.includes(report.id) ? "Remove from favorites" : "Add to favorites"}
-                                >
-                                  <Star className={`h-4 w-4 ${favorites.includes(report.id) ? 'fill-current' : ''}`} />
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <h3 
+                                className="font-medium text-gray-800 dark:text-white cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                                onClick={() => handleOpenReport(report)}
+                              >
+                                {report.name}
+                              </h3>
+                              <button
+                                onClick={() => toggleFavorite(report.id)}
+                                className={`p-1.5 rounded-md transition-colors ${
+                                  favorites.includes(report.id)
+                                    ? 'text-yellow-500 hover:text-yellow-600'
+                                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-slate-700'
+                                }`}
+                                title={favorites.includes(report.id) ? "Remove from favorites" : "Add to favorites"}
+                              >
+                                <Star className={`h-4 w-4 ${favorites.includes(report.id) ? 'fill-current' : ''}`} />
+                              </button>
+                            </div>
                             <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                               <span>Last modified: {formatDate(report.lastModified)}</span>
                               <span>Size: {formatFileSize(report.size || 0)}</span>
