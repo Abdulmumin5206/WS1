@@ -234,11 +234,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     }
 
     if (showNamePrompt) {
-      if (!newReportName.trim()) {
+      if (!reportName.trim()) {
         toast.error("Please enter a report name");
         return;
       }
-      setReportName(newReportName);
       setShowNamePrompt(false);
     }
 
