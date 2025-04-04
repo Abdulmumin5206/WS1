@@ -37,6 +37,8 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { indexedDBService } from '@/utils/indexedDB';
 import { toast } from 'react-hot-toast';
 import ImageCropper from "./ImageCropper";
+import { processImage, optimizeForStorage, optimizeForDisplay, rotateImage, calculateImageSize } from '../utils/imageProcessor';
+import { storeImage, getImage, removeImage as removeStoredImage } from '../utils/imageStorage';
 
 interface ImageItem {
   id: string;
@@ -47,6 +49,8 @@ interface ImageItem {
   rotation: number;
 }
 
+type ImageSize = 'small' | 'medium' | 'large';
+
 interface Section {
   id: number;
   title: string;
@@ -54,6 +58,7 @@ interface Section {
   images: ImageItem[];
   imageLayout: {
     imagesPerRow: 1 | 2 | 3;
+    imageSize: ImageSize;
   };
   titleColor?: string; // Add title color option
 }
@@ -102,7 +107,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       title: "Summary",
       content: "",
       images: [],
-      imageLayout: { imagesPerRow: 2 },
+      imageLayout: { imagesPerRow: 2, imageSize: 'medium' },
       titleColor: "#000000" // Default to black
     }]
   );
@@ -465,7 +470,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         title: sectionTitle,
         content: "<p></p>",
         images: [],
-        imageLayout: { imagesPerRow: 2 },
+        imageLayout: { imagesPerRow: 2, imageSize: 'medium' },
         titleColor: "#000000" // Default to black
       }
     ]);
@@ -476,7 +481,12 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     }, 0);
   };
 
-  const removeSection = (id: number) => {
+  const removeSection = async (id: number) => {
+    const section = sections.find(s => s.id === id);
+    if (section) {
+      // Remove all images in the section from storage
+      await Promise.all(section.images.map(img => removeStoredImage(img.id)));
+    }
     setSections((prev) => prev.filter((section) => section.id !== id));
   };
 
@@ -508,93 +518,87 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   // IMAGE HANDLING
   // ------------------
 
-  const handleImageRotate = (
+  const handleImageRotate = async (
     sectionId: number,
     imageId: string,
     direction: 'left' | 'right'
   ) => {
-    setSections((prev) =>
-      prev.map((section) =>
-        section.id === sectionId
-          ? {
-              ...section,
-              images: section.images.map((img) =>
-                img.id === imageId
-                  ? {
-                      ...img,
-                      rotation: (img.rotation + (direction === 'right' ? 90 : -90)) % 360,
-                    }
-                  : img
-              ),
-            }
-          : section
-      )
+    const updatedSections = await Promise.all(
+      sections.map(async (section) => {
+        if (section.id !== sectionId) return section;
+
+        const updatedImages = await Promise.all(
+          section.images.map(async (img) => {
+            if (img.id !== imageId) return img;
+
+            const degrees = direction === 'right' ? 90 : -90;
+            const rotated = await rotateImage(img.url, degrees);
+            
+            // Store rotated image
+            await storeImage(
+              img.id,
+              rotated.url,
+              rotated.width,
+              rotated.height,
+              rotated.size
+            );
+            
+            return {
+              ...img,
+              url: rotated.url,
+              rotation: (img.rotation + degrees) % 360,
+            };
+          })
+        );
+
+        return {
+          ...section,
+          images: updatedImages,
+        };
+      })
     );
+
+    setSections(updatedSections);
   };
 
   // Process uploaded image with size optimization
   const processUploadedImage = async (
     file: File
   ): Promise<{ url: string; needsProcessing: boolean }> => {
-    const initialUrl = URL.createObjectURL(file);
     try {
-      // Optimize image size during upload
-      const optimizedImage = await new Promise<{ url: string; size: number }>((resolve) => {
-        const img = document.createElement("img");
-        img.src = initialUrl;
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-
-          // If image is larger than 2000px in any dimension, reduce it proportionally
-          const maxDimension = 2000;
-          if (width > maxDimension || height > maxDimension) {
-            if (width > height) {
-              height = Math.round((height * maxDimension) / width);
-              width = maxDimension;
-            } else {
-              width = Math.round((width * maxDimension) / height);
-              height = maxDimension;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          
-          if (ctx) {
-            // Use better quality settings
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            
-            // Draw image with white background (for transparent PNGs)
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            // Convert to JPEG with 0.8 quality (good balance between size and quality)
-            const optimizedUrl = canvas.toDataURL('image/jpeg', 0.8);
-            
-            // Calculate size of optimized image
-            const base64str = optimizedUrl.split(',')[1];
-            const optimizedSize = Math.round((base64str.length * 3) / 4);
-
-            resolve({ url: optimizedUrl, size: optimizedSize });
-          } else {
-            // Fallback to original file if canvas is not supported
-            resolve({ url: initialUrl, size: file.size });
-          }
-        };
-        img.onerror = () => resolve({ url: initialUrl, size: file.size });
+      // First process for display
+      const displayResult = await processImage(file, {
+        maxDimension: 2000,
+        quality: 0.8,
+        format: 'jpeg'
       });
 
-      return { url: optimizedImage.url, needsProcessing: false };
+      // Generate unique ID for the image
+      const imageId = `${Date.now()}-${Math.random().toString(36).substring(2)}`;
+
+      // Store optimized version
+      const storageResult = await processImage(displayResult.url, {
+        maxDimension: 1200,
+        quality: 0.7,
+        format: 'jpeg'
+      });
+
+      // Store in IndexedDB
+      await storeImage(
+        imageId,
+        storageResult.url,
+        storageResult.width,
+        storageResult.height,
+        storageResult.size
+      );
+
+      return {
+        url: displayResult.url,
+        needsProcessing: false
+      };
     } catch (error) {
-      console.error("Error processing image:", error);
-      return { url: initialUrl, needsProcessing: true };
-    } finally {
-      URL.revokeObjectURL(initialUrl);
+      console.error('Error processing image:', error);
+      throw error;
     }
   };
 
@@ -670,13 +674,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     setProcessingImage(false);
   };
 
-  const removeImage = (sectionId: number, imageId: string) => {
+  const removeImage = async (sectionId: number, imageId: string) => {
+    // Remove from storage
+    await removeStoredImage(imageId);
+    
     setSections((prev) =>
       prev.map((section) =>
         section.id === sectionId
           ? {
               ...section,
-              images: section.images.filter((img) => img.id !== imageId)
+              images: section.images.filter((img) => img.id !== imageId),
             }
           : section
       )
@@ -715,6 +722,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       prev.map((section) =>
         section.id === sectionId
           ? { ...section, imageLayout: { ...section.imageLayout, imagesPerRow } }
+          : section
+      )
+    );
+  };
+
+  const updateImageSize = (sectionId: number, size: ImageSize) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === sectionId
+          ? { ...section, imageLayout: { ...section.imageLayout, imageSize: size } }
           : section
       )
     );
@@ -1181,11 +1198,25 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             const totalRowSpacing = (rowImages.length - 1) * imageSpacing;
             const availableWidthForRow = pdfWidth - (SPACING.MARGIN * 2);
 
-            // Define target heights based on layout
+            // Define target heights based on layout and size
             const targetRowHeight = 
-              imagesPerRow === 1 ? 110 :
-              imagesPerRow === 2 ? 90 :
-              70;
+              imagesPerRow === 1 
+                ? section.imageLayout.imageSize === 'small' 
+                  ? 80 
+                  : section.imageLayout.imageSize === 'medium'
+                    ? 110
+                    : 140
+                : imagesPerRow === 2
+                  ? section.imageLayout.imageSize === 'small'
+                    ? 60
+                    : section.imageLayout.imageSize === 'medium'
+                      ? 90
+                      : 120
+                  : section.imageLayout.imageSize === 'small'
+                    ? 40
+                    : section.imageLayout.imageSize === 'medium'
+                      ? 70
+                      : 100;
 
             // Check for page break before processing the row
             if (checkForNewPage(targetRowHeight + 20)) { /* Add buffer for captions */ }
@@ -1399,6 +1430,63 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       b: parseInt(result[3], 16)
     } : { r: 26, g: 54, b: 93 }; // Default to deep blue if invalid hex
   };
+
+  // Load optimized images when initializing
+  useEffect(() => {
+    const loadOptimizedImages = async () => {
+      if (!isInitialized || !sections.length) return;
+
+      const updatedSections = await Promise.all(
+        sections.map(async (section) => {
+          const optimizedImages = await Promise.all(
+            section.images.map(async (img) => {
+              if (img.needsProcessing) {
+                try {
+                  // Get dimensions from the original image
+                  const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
+                    const image = new window.Image();
+                    image.onload = () => {
+                      resolve({
+                        width: image.width,
+                        height: image.height
+                      });
+                    };
+                    image.src = img.url;
+                  });
+
+                  const optimized = await optimizeForStorage(img.url);
+                  const size = calculateImageSize(optimized);
+                  
+                  await storeImage(
+                    img.id,
+                    optimized,
+                    dimensions.width,
+                    dimensions.height,
+                    size
+                  );
+                  
+                  return { ...img, url: optimized, needsProcessing: false };
+                } catch (error) {
+                  console.error('Error optimizing image:', error);
+                  return img;
+                }
+              }
+              return img;
+            })
+          );
+
+          return {
+            ...section,
+            images: optimizedImages,
+          };
+        })
+      );
+
+      setSections(updatedSections);
+    };
+
+    loadOptimizedImages();
+  }, [isInitialized]);
 
   // ------------------
   // RENDER
@@ -1905,7 +1993,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
-                            <rect x="3" y="6" width="14" height="8" rx="1" />
+                            <path d="M2 4a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2 0v12h12V4H4z" />
                           </svg>
                         </button>
                         <button
@@ -1924,8 +2012,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
-                            <rect x="3" y="6" width="6.5" height="8" rx="1" />
-                            <rect x="10.5" y="6" width="6.5" height="8" rx="1" />
+                            <path d="M2 4a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2 0v12h5V4H4zm7 0v12h5V4h-5z" />
                           </svg>
                         </button>
                         <button
@@ -1944,9 +2031,71 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
-                            <rect x="3" y="6" width="4" height="8" rx="1" />
-                            <rect x="8" y="6" width="4" height="8" rx="1" />
-                            <rect x="13" y="6" width="4" height="8" rx="1" />
+                            <path d="M2 4a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2 0v12h3V4H4zm4 0v12h3V4H8zm4 0v12h3V4h-3z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-2 sm:mt-0">
+                      <span className="text-xs text-gray-500 mr-2">
+                        Image size:
+                      </span>
+                      <div className="flex space-x-2 mt-1 sm:mt-0">
+                        <button
+                          type="button"
+                          onClick={() => updateImageSize(section.id, 'small')}
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imageSize === 'small'
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                          }`}
+                          title="Small size"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <rect x="6" y="6" width="8" height="8" rx="1" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateImageSize(section.id, 'medium')}
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imageSize === 'medium'
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                          }`}
+                          title="Medium size"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <rect x="4" y="4" width="12" height="12" rx="1" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateImageSize(section.id, 'large')}
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imageSize === 'large'
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                          }`}
+                          title="Large size"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                          >
+                            <rect x="2" y="2" width="16" height="16" rx="1" />
                           </svg>
                         </button>
                       </div>
@@ -1980,10 +2129,22 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                           style={{
                             width: "100%",
                             height: section.imageLayout.imagesPerRow === 1 
-                              ? "320px sm:480px"
+                              ? section.imageLayout.imageSize === 'small' 
+                                ? "240px"
+                                : section.imageLayout.imageSize === 'medium'
+                                  ? "320px"
+                                  : "400px"
                               : section.imageLayout.imagesPerRow === 2
-                                ? "240px sm:320px"
-                                : "180px sm:220px"
+                                ? section.imageLayout.imageSize === 'small'
+                                  ? "180px"
+                                  : section.imageLayout.imageSize === 'medium'
+                                    ? "240px"
+                                    : "300px"
+                                : section.imageLayout.imageSize === 'small'
+                                  ? "140px"
+                                  : section.imageLayout.imageSize === 'medium'
+                                    ? "180px"
+                                    : "220px"
                           }}
                         >
                           <img
@@ -1993,10 +2154,22 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             style={{
                               transform: `rotate(${image.rotation}deg)`,
                               maxHeight: section.imageLayout.imagesPerRow === 1 
-                                ? "300px sm:460px"
+                                ? section.imageLayout.imageSize === 'small'
+                                  ? "220px"
+                                  : section.imageLayout.imageSize === 'medium'
+                                    ? "300px"
+                                    : "380px"
                                 : section.imageLayout.imagesPerRow === 2
-                                  ? "220px sm:300px"
-                                  : "160px sm:200px"
+                                  ? section.imageLayout.imageSize === 'small'
+                                    ? "160px"
+                                    : section.imageLayout.imageSize === 'medium'
+                                      ? "220px"
+                                      : "280px"
+                                  : section.imageLayout.imageSize === 'small'
+                                    ? "120px"
+                                    : section.imageLayout.imageSize === 'medium'
+                                      ? "160px"
+                                      : "200px"
                             }}
                           />
                         </div>
