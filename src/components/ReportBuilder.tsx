@@ -977,10 +977,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     if (!reportRef.current) return;
 
     try {
+      // Show loading toast with better mobile visibility
       const loadingToast = document.createElement("div");
       loadingToast.innerText = "Generating PDF, please wait...";
-      loadingToast.className =
-        "fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+      loadingToast.className = "fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm sm:text-base";
       document.body.appendChild(loadingToast);
 
       const pdf = new jsPDF({
@@ -1349,11 +1349,44 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
       // Save with report name
       const finalReportName = useDateInName ? previewReportName : reportName;
       const sanitizedFileName = finalReportName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      pdf.save(`${sanitizedFileName}.pdf`);
-      loadingToast.remove();
+      
+      // Check if we're on a mobile device
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        // For mobile devices, use a more direct download approach
+        const pdfBlob = pdf.output('blob');
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        
+        // Create a temporary link and trigger download
+        const link = document.createElement('a');
+        link.href = pdfUrl;
+        link.download = `${sanitizedFileName}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(pdfUrl);
+        
+        // Show success message
+        loadingToast.innerText = "PDF downloaded! Check your downloads folder.";
+        loadingToast.className = "fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm sm:text-base";
+        setTimeout(() => {
+          loadingToast.remove();
+        }, 3000);
+      } else {
+        // For desktop, use the regular save method
+        pdf.save(`${sanitizedFileName}.pdf`);
+        loadingToast.remove();
+      }
     } catch (error) {
       console.error("Error generating PDF:", error);
-      alert("Error generating PDF. Please try again.");
+      const errorToast = document.createElement("div");
+      errorToast.innerText = "Error generating PDF. Please try again.";
+      errorToast.className = "fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm sm:text-base";
+      document.body.appendChild(errorToast);
+      setTimeout(() => {
+        errorToast.remove();
+      }, 3000);
     }
   };
 
