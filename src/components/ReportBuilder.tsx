@@ -1553,14 +1553,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         />
       )}
 
-      <main className="container mx-auto py-8 px-4 max-w-4xl">
+      <main className="container mx-auto py-4 sm:py-8 px-2 sm:px-4 max-w-4xl">
         <div
-          className="bg-white dark:bg-slate-800 shadow-sm rounded-lg p-6 mb-6"
+          className="bg-white dark:bg-slate-800 shadow-sm rounded-lg p-3 sm:p-6 mb-4 sm:mb-6"
           ref={reportRef}
         >
-          <div className="flex justify-between items-center mb-6">
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold text-gray-800 dark:text-white">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-800 dark:text-white">
                 Report Builder
               </h1>
               <div className="flex items-center gap-2">
@@ -1575,14 +1575,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         saveReport();
                         setIsRenaming(false);
                       }}
-                      className="px-2 py-1 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
+                      className="w-full sm:w-auto px-2 py-1 text-sm border rounded dark:bg-slate-700 dark:border-slate-600 dark:text-white"
                       placeholder="Enter report name"
                       autoFocus
                     />
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-700 dark:text-gray-300">{reportName}</span>
+                    <span className="text-sm sm:text-base text-gray-700 dark:text-gray-300">{reportName}</span>
                     <button
                       onClick={() => setIsRenaming(true)}
                       className="p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
@@ -1593,25 +1593,25 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
+                <span className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
                   Last saved: {lastSaved}
                 </span>
                 <button
                   onClick={() => saveReport()}
                   disabled={isSaving}
-                  className={`p-2 rounded-full transition-all duration-200 ${
+                  className={`p-1.5 sm:p-2 rounded-full transition-all duration-200 ${
                     isSaving 
                       ? 'bg-gray-100 dark:bg-slate-700 text-gray-400' 
                       : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 hover:scale-105'
                   }`}
                   title="Save report"
                 >
-                  <Save className="h-5 w-5" />
+                  <Save className="h-4 w-4 sm:h-5 sm:w-5" />
                 </button>
                 {saveFeedback && (
-                  <span className={`text-sm ${
+                  <span className={`text-xs sm:text-sm ${
                     saveFeedback === "Saved!" 
                       ? 'text-green-600 dark:text-green-400' 
                       : 'text-blue-600 dark:text-blue-400'
@@ -1622,14 +1622,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               </div>
               <button
                 onClick={onClose}
-                className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
+                className="p-1.5 sm:p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
                 title="Close report"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
+                className="p-1.5 sm:p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 hover:scale-105 transition-all duration-200"
                 title={
                   theme === "light"
                     ? "Switch to dark mode"
@@ -1637,21 +1637,21 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                 }
               >
                 {theme === "light" ? (
-                  <Moon className="h-5 w-5" />
+                  <Moon className="h-4 w-4 sm:h-5 sm:w-5" />
                 ) : (
-                  <Sun className="h-5 w-5" />
+                  <Sun className="h-4 w-4 sm:h-5 sm:w-5" />
                 )}
               </button>
             </div>
           </div>
 
-          <div className="mb-6">
-            <div className="flex items-center gap-4 mb-2">
+          <div className="mb-4 sm:mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
               <input
                 type="text"
                 value={reportTitle}
                 onChange={(e) => setReportTitle(e.target.value)}
-                className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-2xl font-bold"
+                className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-lg sm:text-2xl font-bold"
                 placeholder="Report Title"
                 style={{ 
                   color: theme === 'dark' && reportTitleColor === '#000000' ? '#ffffff' : reportTitleColor
@@ -1666,7 +1666,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     <button
                       key={color.value}
                       onClick={() => setReportTitleColor(color.value)}
-                      className={`relative w-6 h-6 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
+                      className={`relative w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
                         reportTitleColor === color.value
                           ? 'border-blue-500 shadow-lg'
                           : 'border-gray-200 dark:border-gray-600'
@@ -1675,23 +1675,20 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     >
                       {color.isDefault && (
                         <span className="absolute inset-0 flex items-center justify-center text-white">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 sm:h-3 sm:w-3" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                           </svg>
                         </span>
                       )}
-                      <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
-                        {color.name}
-                      </span>
                     </button>
                   ))}
                 </div>
               </div>
             </div>
             
-            <div className="flex gap-4 items-center justify-between mt-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 items-start sm:items-center justify-between mt-2">
               {(!useDateInName || !dateFieldsConfigured) && (
-                <div className="flex gap-4 items-center">
+                <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 items-start sm:items-center">
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-gray-500 dark:text-gray-400">
                       Start Date:
@@ -1717,7 +1714,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                 </div>
               )}
               
-              <div className="flex items-center gap-3 ml-auto">
+              <div className="flex items-center gap-2 sm:gap-3">
                 {(!useDateInName || !dateFieldsConfigured) && (
                   <div className="flex items-center gap-2">
                     <input
@@ -1732,7 +1729,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       }}
                       className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="reportDateInName" className="text-sm text-gray-600 dark:text-gray-300">
+                    <label htmlFor="reportDateInName" className="text-xs sm:text-sm text-gray-600 dark:text-gray-300">
                       Include date in filename
                     </label>
                   </div>
@@ -1742,21 +1739,21 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
           </div>
 
           {sections.map((section) => (
-            <div key={section.id} className="mb-8 pb-6 border-b border-gray-100">
-              <div className="flex items-start justify-between mb-3">
+            <div key={section.id} className="mb-6 pb-4 sm:pb-6 border-b border-gray-100">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-3">
                 <div className="flex-1">
                   <div className="mb-4 relative">
                     <div className="flex items-center space-x-1 pdf-hide mb-2">
                       <button
                         onClick={() => moveSectionUp(section.id)}
-                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                        className="p-1.5 sm:p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section up"
                       >
                         <ArrowUp className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => moveSectionDown(section.id)}
-                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                        className="p-1.5 sm:p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section down"
                       >
                         <ArrowDown className="h-4 w-4" />
@@ -1764,19 +1761,19 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       {sections.length > 1 && (
                         <button
                           onClick={() => removeSection(section.id)}
-                          className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                          className="p-1.5 sm:p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                           title="Remove section"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
                     </div>
-                    <div className="flex items-center gap-4 mb-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
                       <input
                         type="text"
                         value={section.title}
                         onChange={(e) => handleTitleChange(section.id, e.target.value)}
-                        className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-lg font-semibold"
+                        className="flex-1 p-2 border border-gray-200 dark:border-gray-700 dark:bg-slate-800 rounded-md text-base sm:text-lg font-semibold"
                         placeholder="Section title..."
                         style={{ 
                           color: theme === 'dark' && (section.titleColor || reportTitleColor) === '#000000' ? '#ffffff' : (section.titleColor || reportTitleColor)
@@ -1799,7 +1796,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                                   )
                                 );
                               }}
-                              className={`relative w-6 h-6 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
+                              className={`relative w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-all duration-200 hover:scale-110 ${
                                 (section.titleColor || reportTitleColor) === color.value
                                   ? 'border-blue-500 shadow-lg'
                                   : 'border-gray-200 dark:border-gray-600'
@@ -1808,14 +1805,11 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             >
                               {color.isDefault && (
                                 <span className="absolute inset-0 flex items-center justify-center text-white">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 sm:h-3 sm:w-3" viewBox="0 0 20 20" fill="currentColor">
                                     <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                                   </svg>
                                 </span>
                               )}
-                              <span className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-900 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-50">
-                                {color.name}
-                              </span>
                             </button>
                           ))}
                         </div>
@@ -1832,8 +1826,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
               {section.images.length === 0 && (
                 <div
-                  className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-md p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 pdf-hide mb-3 bg-white dark:bg-slate-800"
-                  style={{ minHeight: "150px" }}
+                  className="border-2 border-dashed border-gray-200 dark:border-gray-600 rounded-md p-4 sm:p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 pdf-hide mb-3 bg-white dark:bg-slate-800"
+                  style={{ minHeight: "120px" }}
                   onDragOver={preventDefault}
                   onDragEnter={preventDefault}
                   onDragLeave={preventDefault}
@@ -1848,8 +1842,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     }
                   }}
                 >
-                  <Image className="h-10 w-10 text-gray-300 mb-3" />
-                  <p className="text-sm text-gray-500 mb-1">
+                  <Image className="h-8 w-8 sm:h-10 sm:w-10 text-gray-300 mb-2 sm:mb-3" />
+                  <p className="text-xs sm:text-sm text-gray-500 mb-1">
                     Drop images here or click to upload
                   </p>
                   <p className="text-xs text-gray-400">
@@ -1860,24 +1854,25 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
               {section.images.length > 0 && (
                 <div className="pdf-hide mt-2">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4">
                     <div>
                       <span className="text-xs text-gray-500 mr-2">
                         Image layout:
                       </span>
-                      <div className="flex space-x-2">
+                      <div className="flex space-x-2 mt-1 sm:mt-0">
                         <button
                           type="button"
                           onClick={() => updateImageLayout(section.id, 1)}
-                          className={`p-2 rounded ${section.imageLayout.imagesPerRow === 1
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imagesPerRow === 1
                               ? "bg-blue-600 text-white"
                               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            }`}
+                          }`}
                           title="Single image layout"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
@@ -1887,15 +1882,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         <button
                           type="button"
                           onClick={() => updateImageLayout(section.id, 2)}
-                          className={`p-2 rounded ${section.imageLayout.imagesPerRow === 2
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imagesPerRow === 2
                               ? "bg-blue-600 text-white"
                               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            }`}
+                          }`}
                           title="Two image layout"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
@@ -1906,15 +1902,16 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                         <button
                           type="button"
                           onClick={() => updateImageLayout(section.id, 3)}
-                          className={`p-2 rounded ${section.imageLayout.imagesPerRow === 3
+                          className={`p-1.5 sm:p-2 rounded ${
+                            section.imageLayout.imagesPerRow === 3
                               ? "bg-blue-600 text-white"
                               : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                            }`}
+                          }`}
                           title="Three image layout"
                         >
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
+                            className="h-3 w-3 sm:h-4 sm:w-4"
                             viewBox="0 0 20 20"
                             fill="currentColor"
                           >
@@ -1934,12 +1931,12 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       : section.imageLayout.imagesPerRow === 2 
                         ? section.images.length === 1 
                           ? 'flex justify-center' 
-                          : 'grid grid-cols-2 gap-3' 
+                          : 'grid grid-cols-1 sm:grid-cols-2 gap-3' 
                         : section.images.length === 1 
                           ? 'flex justify-center' 
                           : section.images.length === 2 
-                            ? 'flex justify-center gap-6 mx-auto' 
-                            : 'grid grid-cols-3 gap-3'
+                            ? 'flex flex-col sm:flex-row justify-center gap-3 sm:gap-6 mx-auto' 
+                            : 'grid grid-cols-1 sm:grid-cols-3 gap-3'
                   }>
                     {section.images.map((image) => (
                       <div key={image.id} className={`relative group ${
@@ -1954,10 +1951,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                           style={{
                             width: "100%",
                             height: section.imageLayout.imagesPerRow === 1 
-                              ? "480px"
+                              ? "320px sm:480px"
                               : section.imageLayout.imagesPerRow === 2
-                                ? "320px"
-                                : "220px"
+                                ? "240px sm:320px"
+                                : "180px sm:220px"
                           }}
                         >
                           <img
@@ -1967,10 +1964,10 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             style={{
                               transform: `rotate(${image.rotation}deg)`,
                               maxHeight: section.imageLayout.imagesPerRow === 1 
-                                ? "460px"
+                                ? "300px sm:460px"
                                 : section.imageLayout.imagesPerRow === 2
-                                  ? "300px"
-                                  : "200px"
+                                  ? "220px sm:300px"
+                                  : "160px sm:200px"
                             }}
                           />
                         </div>
@@ -1983,24 +1980,24 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                           <div className="hidden group-hover:flex gap-2">
                             <button
                               onClick={() => handleImageRotate(section.id, image.id, 'right')}
-                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
+                              className="p-1.5 sm:p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
                               title="Rotate"
                             >
-                              <RotateCw className="h-4 w-4 text-blue-500" />
+                              <RotateCw className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
                             </button>
                             <button
                               onClick={() => handleImageCrop(section.id, image.id, image.url)}
-                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
+                              className="p-1.5 sm:p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-gray-100 dark:hover:bg-slate-700 hover:scale-105 transition-all duration-200"
                               title="Crop image"
                             >
-                              <Crop className="h-4 w-4 text-blue-500" />
+                              <Crop className="h-3 w-3 sm:h-4 sm:w-4 text-blue-500" />
                             </button>
                             <button
                               onClick={() => removeImage(section.id, image.id)}
-                              className="p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-red-50 dark:hover:bg-red-900/20 hover:scale-105 transition-all duration-200"
+                              className="p-1.5 sm:p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg hover:bg-red-50 dark:hover:bg-red-900/20 hover:scale-105 transition-all duration-200"
                               title="Remove image"
                             >
-                              <Trash2 className="h-4 w-4 text-red-500" />
+                              <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
                             </button>
                           </div>
                         </div>
@@ -2010,7 +2007,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                             value={image.caption}
                             onChange={(e) => handleCaptionChange(section.id, image.id, e.target.value)}
                             placeholder="Add caption..."
-                            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-200 dark:border-gray-700 dark:bg-slate-800 dark:text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
                         </div>
                       </div>
@@ -2019,7 +2016,7 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
                   {/* Add more images button */}
                   <div 
-                    className="mt-4 border-2 border-dashed border-gray-200 rounded-md p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
+                    className="mt-4 border-2 border-dashed border-gray-200 rounded-md p-3 sm:p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
                     onClick={() => {
                       if (fileInputRef.current) {
                         fileInputRef.current.setAttribute(
@@ -2030,30 +2027,30 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       }
                     }}
                   >
-                    <Plus className="h-6 w-6 text-gray-400" />
-                    <p className="text-sm text-gray-500 mt-1">Add more images</p>
+                    <Plus className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400" />
+                    <p className="text-xs sm:text-sm text-gray-500 mt-1">Add more images</p>
                   </div>
                 </div>
               )}
             </div>
           ))}
+
+          <button
+            onClick={addSection}
+            className="flex items-center justify-center w-full bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium py-2 px-3 rounded-md text-sm mb-4 transition-colors"
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add Section
+          </button>
+
+          <button
+            onClick={generatePDF}
+            className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
+          >
+            <Download className="mr-1 h-4 w-4" />
+            Save as PDF
+          </button>
         </div>
-
-        <button
-          onClick={addSection}
-          className="flex items-center justify-center w-full bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium py-2 px-3 rounded-md text-sm mb-4 transition-colors"
-        >
-          <Plus className="mr-1 h-4 w-4" />
-          Add Section
-        </button>
-
-        <button
-          onClick={generatePDF}
-          className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
-        >
-          <Download className="mr-1 h-4 w-4" />
-          Save as PDF
-        </button>
       </main>
 
       {/* Hidden file input for images */}
