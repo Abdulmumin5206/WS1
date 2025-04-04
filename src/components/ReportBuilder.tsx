@@ -1380,12 +1380,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             <p className="text-sm">This is a beta version running in test mode. Some features may be experimental.</p>
           </div>
           <a 
-            href="#" 
+            href="mailto:abdusattorovme@gmail.com" 
             className="text-xs text-blue-100 hover:text-white underline"
-            onClick={(e) => {
-              e.preventDefault();
-              toast.success('Thank you for your interest! Feedback feature coming soon.');
-            }}
           >
             Send Feedback
           </a>
