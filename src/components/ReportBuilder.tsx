@@ -134,6 +134,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
   const [dateFieldsConfigured, setDateFieldsConfigured] = useState(false);
   const [croppingImage, setCroppingImage] = useState<{ sectionId: number; imageId: string; url: string } | null>(null);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [showPDFPreview, setShowPDFPreview] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1488,9 +1490,426 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     loadOptimizedImages();
   }, [isInitialized]);
 
-  // ------------------
-  // RENDER
-  // ------------------
+  // Add this new function for PDF preview
+  const generatePDFPreview = async () => {
+    if (!reportRef.current) return;
+
+    try {
+      const loadingToast = document.createElement("div");
+      loadingToast.innerText = "Generating PDF preview...";
+      loadingToast.className = "fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+      document.body.appendChild(loadingToast);
+
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+        compress: true
+      });
+
+      // Reuse the same PDF generation logic from generatePDF
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      const SPACING = {
+        MARGIN: 10,
+        TITLE_AFTER: 8,
+        DATE_AFTER: 6,
+        SECTION_TITLE_AFTER: 4,
+        PARAGRAPH: 6,
+        HEADING: 6,
+        LIST_ITEM: 6,
+        IMAGE_GAP: 3,
+        SECTION_AFTER: 5
+      };
+
+      let y = SPACING.MARGIN + 5;
+      let currentPage = 1;
+
+      const addNewPage = () => {
+        pdf.addPage();
+        currentPage++;
+        y = SPACING.MARGIN + 5;
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(9);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - 10, {
+          align: "center"
+        });
+      };
+
+      const checkForNewPage = (heightNeeded: number): boolean => {
+        if (y + heightNeeded > pdfHeight - SPACING.MARGIN - 10) {
+          addNewPage();
+          return true;
+        }
+        return false;
+      };
+
+      // Title + Date
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(22);
+      const titleColor = hexToRgb(reportTitleColor);
+      pdf.setTextColor(titleColor.r, titleColor.g, titleColor.b);
+      const sanitizedTitle = sanitizeTextForPDF(reportTitle);
+      pdf.text(sanitizedTitle, pdfWidth / 2, y, { align: "center" });
+      y += SPACING.TITLE_AFTER;
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.setTextColor(100, 100, 100);
+      const dateText = getDateRangeText();
+      pdf.text(dateText, pdfWidth / 2, y, { align: "center" });
+      y += SPACING.DATE_AFTER;
+
+      // Process Sections
+      for (const section of sections) {
+        checkForNewPage(20);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(12);
+        const sectionColor = hexToRgb(section.titleColor || reportTitleColor);
+        pdf.setTextColor(sectionColor.r, sectionColor.g, sectionColor.b);
+        const sanitizedSectionTitle = sanitizeTextForPDF(section.title);
+        pdf.text(sanitizedSectionTitle, SPACING.MARGIN, y);
+        y += SPACING.SECTION_TITLE_AFTER + 5;
+
+        // Content
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(11);
+        pdf.setTextColor(40, 40, 40);
+
+        const contentItems = parseHtml(section.content);
+        let listCounters: { [key: number]: number } = {};
+
+        for (const item of contentItems) {
+          if (item.text === "\n") {
+            y += pdf.getFontSize() * 0.5;
+            continue;
+          }
+
+          checkForNewPage(6);
+
+          let text = sanitizeTextForPDF(item.text);
+
+          const currentNestLevel = item.style.nestLevel || 0;
+          for (const level in listCounters) {
+            if (parseInt(level) > currentNestLevel) {
+              delete listCounters[parseInt(level)];
+            }
+          }
+
+          if (item.style.list === "ordered" && item.style.isListItem) {
+            listCounters[currentNestLevel] = (listCounters[currentNestLevel] || 0) + 1;
+          }
+
+          if (item.style.isHeading) {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(12);
+          } else if (item.style.isBold && item.style.isItalic) {
+            pdf.setFont("helvetica", "bolditalic");
+            pdf.setFontSize(item.style.fontSize || 11);
+          } else if (item.style.isBold) {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(item.style.fontSize || 11);
+          } else if (item.style.isItalic) {
+            pdf.setFont("helvetica", "italic");
+            pdf.setFontSize(item.style.fontSize || 11);
+          } else {
+            pdf.setFont("helvetica", "normal");
+            pdf.setFontSize(item.style.fontSize || 11);
+          }
+
+          let xPos = SPACING.MARGIN;
+          const textOptions: any = {};
+          if (item.style.align === "center") {
+            xPos = pdfWidth / 2;
+            textOptions.align = "center";
+          } else if (item.style.align === "right") {
+            xPos = pdfWidth - SPACING.MARGIN;
+            textOptions.align = "right";
+          }
+
+          if (item.style.isListItem) {
+            const nestIndent = (item.style.nestLevel || 0) * 4 + SPACING.MARGIN;
+            let listMarker = "";
+            if (item.style.list === "bullet") {
+              listMarker = "•";
+              xPos = nestIndent + 5;
+            } else if (item.style.list === "dash") {
+              listMarker = "-";
+              xPos = nestIndent + 5;
+            } else if (item.style.list === "ordered") {
+              const counter = listCounters[currentNestLevel] || 1;
+              listMarker = `${counter}.`;
+              xPos = nestIndent + 5 + (listMarker.length * 1);
+            }
+            pdf.text(listMarker, nestIndent, y);
+          }
+
+          const availableWidth =
+            item.style.isListItem &&
+            (item.style.list === "bullet" || item.style.list === "ordered")
+              ? pdfWidth - xPos - SPACING.MARGIN
+              : pdfWidth - 2 * SPACING.MARGIN;
+
+          const lines = pdf.splitTextToSize(text, availableWidth);
+          pdf.text(lines[0], xPos, y, textOptions);
+
+          if (lines.length > 1) {
+            const lineSpacing = item.style.lineHeight
+              ? item.style.lineHeight * pdf.getFontSize() * 0.4
+              : pdf.getFontSize() * 0.5;
+
+            for (let i = 1; i < lines.length; i++) {
+              y += lineSpacing;
+              checkForNewPage(lineSpacing + 5);
+              pdf.text(lines[i], xPos, y, textOptions);
+            }
+          }
+
+          if (item.style.isHeading) {
+            y += SPACING.HEADING;
+          } else if (item.style.isListItem) {
+            y += SPACING.LIST_ITEM;
+          } else {
+            y += SPACING.PARAGRAPH;
+          }
+        }
+
+        // Images in this section
+        if (section.images.length > 0) {
+          const imagesPerRow = section.imageLayout.imagesPerRow;
+          const rows = Math.ceil(section.images.length / imagesPerRow);
+
+          for (let row = 0; row < rows; row++) {
+            const startIdx = row * imagesPerRow;
+            const endIdx = Math.min(
+              startIdx + imagesPerRow,
+              section.images.length
+            );
+            const rowImages = section.images.slice(startIdx, endIdx);
+
+            const imageSpacing = SPACING.IMAGE_GAP;
+            const totalRowSpacing = (rowImages.length - 1) * imageSpacing;
+            const availableWidthForRow = pdfWidth - (SPACING.MARGIN * 2);
+
+            const targetRowHeight = 
+              imagesPerRow === 1 ? 110 :
+              imagesPerRow === 2 ? 90 :
+              70;
+
+            if (checkForNewPage(targetRowHeight + 20)) { /* Add buffer for captions */ }
+
+            const processedRowData = [];
+            let maxCaptionHeight = 0;
+            const maxWidthPerImage = (availableWidthForRow - totalRowSpacing) / imagesPerRow;
+
+            for (const image of rowImages) {
+              try {
+                const { url: rotatedUrl, width: rotatedWidth, height: rotatedHeight } = await getRotatedImage(image);
+                if (!rotatedWidth || !rotatedHeight) {
+                  console.error("Skipping image due to missing dimensions after rotation:", image.id);
+                  continue;
+                }
+
+                const aspectRatio = rotatedWidth / rotatedHeight;
+                let finalWidth = maxWidthPerImage;
+                let finalHeight = finalWidth / aspectRatio;
+
+                if (finalHeight > targetRowHeight) {
+                  finalHeight = targetRowHeight;
+                  finalWidth = finalHeight * aspectRatio;
+                }
+
+                const captionLines = image.caption
+                  ? pdf.splitTextToSize(sanitizeTextForPDF(image.caption), finalWidth)
+                  : [];
+                const currentCaptionHeight = captionLines.length * 5;
+                maxCaptionHeight = Math.max(maxCaptionHeight, currentCaptionHeight);
+
+                processedRowData.push({
+                  rotatedUrl,
+                  finalWidth,
+                  finalHeight,
+                  captionLines,
+                  captionHeight: currentCaptionHeight
+                });
+              } catch (err) {
+                console.error("Error processing image for PDF:", err);
+                processedRowData.push(null);
+              }
+            }
+
+            const actualTotalRowWidth = processedRowData.reduce((sum, data) => {
+              return sum + (data ? data.finalWidth : 0);
+            }, 0) + totalRowSpacing;
+
+            let currentX = (pdfWidth - actualTotalRowWidth) / 2;
+
+            const startY = y;
+            for (const data of processedRowData) {
+              if (!data) continue;
+
+              try {
+                pdf.addImage(
+                  data.rotatedUrl,
+                  "JPEG",
+                  currentX,
+                  startY,
+                  data.finalWidth,
+                  data.finalHeight
+                );
+
+                if (data.captionLines.length > 0) {
+                  pdf.setFont("helvetica", "italic");
+                  pdf.setFontSize(9);
+                  pdf.setTextColor(100, 100, 100);
+                  const captionStartY = startY + data.finalHeight + 4;
+                  data.captionLines.forEach((line: string, index: number) => {
+                    pdf.text(
+                      line,
+                      currentX + data.finalWidth / 2,
+                      captionStartY + (index * 5),
+                      { align: "center" }
+                    );
+                  });
+                }
+
+                currentX += data.finalWidth + imageSpacing;
+              } catch(err) {
+                console.error("Error drawing image/caption in PDF:", err);
+              }
+            }
+
+            y = startY + targetRowHeight + maxCaptionHeight + SPACING.IMAGE_GAP;
+          }
+        }
+        y += SPACING.SECTION_AFTER;
+      }
+
+      // Add page number to the first page
+      pdf.setPage(1);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(9);
+      pdf.setTextColor(150, 150, 150);
+      pdf.text(`${currentPage}`, pdfWidth / 2, pdfHeight - 10, {
+        align: "center"
+      });
+
+      // Instead of saving, generate a preview URL
+      const pdfBlob = pdf.output('blob');
+      const previewUrl = URL.createObjectURL(pdfBlob);
+      setPdfPreviewUrl(previewUrl);
+      setShowPDFPreview(true);
+      loadingToast.remove();
+    } catch (error) {
+      console.error("Error generating PDF preview:", error);
+      const errorToast = document.createElement("div");
+      errorToast.innerText = "Error generating PDF preview. Please try again.";
+      errorToast.className = "fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg shadow-lg z-50";
+      document.body.appendChild(errorToast);
+      setTimeout(() => {
+        errorToast.remove();
+      }, 3000);
+    }
+  };
+
+  // Add cleanup effect
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) {
+        URL.revokeObjectURL(pdfPreviewUrl);
+      }
+    };
+  }, [pdfPreviewUrl]);
+
+  // ... existing code ...
+
+  // Add this before the return statement
+  useEffect(() => {
+    return () => {
+      // Cleanup preview URL when component unmounts
+      if (pdfPreviewUrl) {
+        URL.revokeObjectURL(pdfPreviewUrl);
+      }
+    };
+  }, [pdfPreviewUrl]);
+
+  // ... existing code ...
+
+  // Add this in the JSX, before the closing </div> of the main container
+  {showPDFPreview && pdfPreviewUrl && (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-slate-800 rounded-lg p-4 max-w-4xl w-full mx-4 h-[80vh] flex flex-col">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            PDF Preview
+          </h3>
+          <button
+            onClick={() => {
+              setShowPDFPreview(false);
+              if (pdfPreviewUrl) {
+                URL.revokeObjectURL(pdfPreviewUrl);
+                setPdfPreviewUrl(null);
+              }
+            }}
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+          <iframe
+            src={pdfPreviewUrl}
+            className="w-full h-full"
+            title="PDF Preview"
+          />
+        </div>
+        <div className="mt-4 flex justify-end gap-3">
+          <button
+            onClick={() => {
+              setShowPDFPreview(false);
+              if (pdfPreviewUrl) {
+                URL.revokeObjectURL(pdfPreviewUrl);
+                setPdfPreviewUrl(null);
+              }
+            }}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+          >
+            Close
+          </button>
+          <button
+            onClick={generatePDF}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+          >
+            Download PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  // ... existing code ...
+
+  // Replace the existing Save as PDF button with this
+  <div className="flex gap-3">
+    <button
+      onClick={generatePDFPreview}
+      className="flex items-center justify-center flex-1 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
+    >
+      <FileText className="mr-1 h-4 w-4" />
+      Preview PDF
+    </button>
+    <button
+      onClick={generatePDF}
+      className="flex items-center justify-center flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
+    >
+      <Download className="mr-1 h-4 w-4" />
+      Save as PDF
+    </button>
+  </div>
+  // ... existing code ...
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
       {/* Beta Version Banner */}
@@ -2236,7 +2655,6 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
               )}
             </div>
           ))}
-
           <button
             onClick={addSection}
             className="flex items-center justify-center w-full bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 font-medium py-2 px-3 rounded-md text-sm mb-4 transition-colors"
@@ -2245,15 +2663,76 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
             Add Section
           </button>
 
-          <button
-            onClick={generatePDF}
-            className="flex items-center justify-center w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
-          >
-            <Download className="mr-1 h-4 w-4" />
-            Save as PDF
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={generatePDFPreview}
+              className="flex items-center justify-center flex-1 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 text-gray-700 dark:text-gray-300 font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
+            >
+              <FileText className="mr-1 h-4 w-4" />
+              Preview PDF
+            </button>
+            <button
+              onClick={generatePDF}
+              className="flex items-center justify-center flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 rounded-md transition-all duration-200 hover:scale-[1.02] shadow-sm hover:shadow-md"
+            >
+              <Download className="mr-1 h-4 w-4" />
+              Save as PDF
+            </button>
+          </div>
         </div>
       </main>
+
+      {/* PDF Preview Modal */}
+      {showPDFPreview && pdfPreviewUrl && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 max-w-4xl w-full mx-4 h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                PDF Preview
+              </h3>
+              <button
+                onClick={() => {
+                  setShowPDFPreview(false);
+                  if (pdfPreviewUrl) {
+                    URL.revokeObjectURL(pdfPreviewUrl);
+                    setPdfPreviewUrl(null);
+                  }
+                }}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+              <iframe
+                src={pdfPreviewUrl}
+                className="w-full h-full"
+                title="PDF Preview"
+              />
+            </div>
+            <div className="mt-4 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowPDFPreview(false);
+                  if (pdfPreviewUrl) {
+                    URL.revokeObjectURL(pdfPreviewUrl);
+                    setPdfPreviewUrl(null);
+                  }
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+              >
+                Close
+              </button>
+              <button
+                onClick={generatePDF}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+              >
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Hidden file input for images */}
       <input
@@ -2273,3 +2752,4 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 };
 
 export default ReportBuilder;
+

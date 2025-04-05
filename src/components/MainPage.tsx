@@ -351,130 +351,114 @@ const MainPage: React.FC = () => {
       )}
 
       <main className="container mx-auto py-8 px-4 max-w-4xl">
-        {/* Header Section */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
-              Report Builder
-            </h1>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">
-              Create and manage your professional reports
-            </p>
+        {/* Top Section - Merged Header and Stats */}
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-8">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+                Report Builder
+              </h1>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
+                Create and manage your professional reports
+              </p>
+            </div>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200"
+                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              >
+                {theme === "light" ? (
+                  <Moon className="h-5 w-5" />
+                ) : (
+                  <Sun className="h-5 w-5" />
+                )}
+              </button>
+              <button
+                onClick={createNewReport}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 hover:scale-105"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                New Report
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition-all duration-200"
-              title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-            >
-              {theme === "light" ? (
-                <Moon className="h-5 w-5" />
-              ) : (
-                <Sun className="h-5 w-5" />
-              )}
-            </button>
-            <button
-              onClick={createNewReport}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 hover:scale-105"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              New Report
-            </button>
-          </div>
-        </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-blue-500" />
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Reports</h3>
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-500" />
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Reports</h3>
+              </div>
+              <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stats.totalReports}</p>
             </div>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stats.totalReports}</p>
-          </div>
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
-            <div className="flex items-center gap-2">
-              <BarChart2 className="h-5 w-5 text-green-500" />
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Storage Used</h3>
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
+              <div className="flex items-center gap-2">
+                <BarChart2 className="h-5 w-5 text-green-500" />
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Storage Used</h3>
+              </div>
+              <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{formatFileSize(stats.totalSize)}</p>
             </div>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{formatFileSize(stats.totalSize)}</p>
-          </div>
-          <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-purple-500" />
-              <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Reports This Week</h3>
+            <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-purple-500" />
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">Reports This Week</h3>
+              </div>
+              <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stats.lastWeekReports}</p>
             </div>
-            <p className="text-2xl font-bold text-gray-800 dark:text-white mt-2">{stats.lastWeekReports}</p>
-          </div>
-        </div>
-
-        {/* Search and Filter */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search reports..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setSelectedFilter('all')}
-              className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-                selectedFilter === 'all'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
-              }`}
-            >
-              <Filter className="h-4 w-4" />
-              All
-            </button>
-            <button
-              onClick={() => setSelectedFilter('recent')}
-              className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-                selectedFilter === 'recent'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
-              }`}
-            >
-              <Clock className="h-4 w-4" />
-              Recent
-            </button>
-            <button
-              onClick={() => setSelectedFilter('favorites')}
-              className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-                selectedFilter === 'favorites'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
-              }`}
-            >
-              <Star className="h-4 w-4" />
-              Favorites
-            </button>
           </div>
         </div>
 
         {/* Reports Section */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-gray-500 dark:text-gray-400" />
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-                All Reports
-              </h2>
+        <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+          {/* Search and Filter */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search reports..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-gray-400" />
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                {new Date().toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-              </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedFilter('all')}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                  selectedFilter === 'all'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                <Filter className="h-4 w-4" />
+                All
+              </button>
+              <button
+                onClick={() => setSelectedFilter('recent')}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                  selectedFilter === 'recent'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                <Clock className="h-4 w-4" />
+                Recent
+              </button>
+              <button
+                onClick={() => setSelectedFilter('favorites')}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                  selectedFilter === 'favorites'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                <Star className="h-4 w-4" />
+                Favorites
+              </button>
             </div>
           </div>
           
@@ -496,46 +480,33 @@ const MainPage: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-6">
-              {/* Reports List Header */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={toggleSelectAll}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-md"
-                    title={selectedReports.size === filteredReports.length ? "Deselect All" : "Select All"}
-                  >
-                    {selectedReports.size === filteredReports.length ? (
-                      <CheckSquare className="w-5 h-5 text-blue-600" />
-                    ) : (
-                      <Square className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
-                  {selectedReports.size > 0 && (
-                    <button
-                      onClick={() => setShowBulkDeleteConfirm(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-md text-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete Selected ({selectedReports.size})
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-gray-400" />
-                  <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
-                    All Reports
-                  </h2>
-                </div>
-              </div>
-              
               {sortedGroups.map((groupKey) => (
                 <div key={groupKey}>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                      {groupKey}
-                    </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                        {groupKey}
+                      </h3>
+                    </div>
+                    
+                    {/* Delete Selected Button - Only show when reports are selected */}
+                    {selectedReports.size > 0 && groupKey === sortedGroups[0] && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Are you sure you want to delete all ${selectedReports.size} selected reports? This action cannot be undone.`)) {
+                            // Show bulk delete confirmation
+                            setShowBulkDeleteConfirm(true);
+                          }
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-600 hover:bg-red-200 rounded-md text-xs"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Delete ({selectedReports.size})
+                      </button>
+                    )}
                   </div>
+                  
                   <div className="space-y-4">
                     {groupedReports[groupKey].map((report) => (
                       <div
@@ -545,16 +516,6 @@ const MainPage: React.FC = () => {
                         }`}
                       >
                         <div className="flex items-center gap-4 flex-1">
-                          <button
-                            onClick={() => toggleSelectReport(report.id)}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
-                          >
-                            {selectedReports.has(report.id) ? (
-                              <CheckSquare className="w-4 h-4 text-blue-600" />
-                            ) : (
-                              <Square className="w-4 h-4 text-gray-400" />
-                            )}
-                          </button>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <h3 
@@ -582,6 +543,17 @@ const MainPage: React.FC = () => {
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleSelectReport(report.id)}
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md"
+                            title={selectedReports.has(report.id) ? "Deselect report" : "Select report"}
+                          >
+                            {selectedReports.has(report.id) ? (
+                              <CheckSquare className="w-5 h-5 text-blue-600" />
+                            ) : (
+                              <Square className="w-5 h-5 text-gray-400" />
+                            )}
+                          </button>
                           <button
                             onClick={() => confirmDelete(report.id)}
                             className="p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
