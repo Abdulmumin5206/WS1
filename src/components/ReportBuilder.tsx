@@ -61,6 +61,7 @@ interface Section {
     imageSize: ImageSize;
   };
   titleColor?: string; // Add title color option
+  startOnNewPage?: boolean; // Add option to start section on new page
 }
 
 interface ReportBuilderProps {
@@ -473,7 +474,8 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
         content: "<p></p>",
         images: [],
         imageLayout: { imagesPerRow: 2, imageSize: 'medium' },
-        titleColor: "#000000" // Default to black
+        titleColor: "#000000", // Default to black
+        startOnNewPage: false // Default to false
       }
     ]);
     
@@ -1065,7 +1067,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
       // Process Sections
       for (const section of sections) {
-        checkForNewPage(20);
+        // Check if section should start on new page
+        if (section.startOnNewPage && y > SPACING.MARGIN + 5) {
+          addNewPage();
+        } else {
+          checkForNewPage(20);
+        }
+        
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(12);
         const sectionColor = hexToRgb(section.titleColor || reportTitleColor);
@@ -1564,7 +1572,13 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
 
       // Process Sections
       for (const section of sections) {
-        checkForNewPage(20);
+        // Check if section should start on new page
+        if (section.startOnNewPage && y > SPACING.MARGIN + 5) {
+          addNewPage();
+        } else {
+          checkForNewPage(20);
+        }
+        
         pdf.setFont("helvetica", "bold");
         pdf.setFontSize(12);
         const sectionColor = hexToRgb(section.titleColor || reportTitleColor);
@@ -1909,6 +1923,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
     </button>
   </div>
   // ... existing code ...
+
+  const handleStartOnNewPageChange = (id: number, value: boolean) => {
+    setSections((prev) =>
+      prev.map((section) =>
+        section.id === id ? { ...section, startOnNewPage: value } : section
+      )
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-900">
@@ -2282,14 +2304,14 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                     <div className="flex items-center space-x-1 pdf-hide mb-2">
                       <button
                         onClick={() => moveSectionUp(section.id)}
-                        className="p-1.5 sm:p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section up"
                       >
                         <ArrowUp className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => moveSectionDown(section.id)}
-                        className="p-1.5 sm:p-2 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                        className="p-1.5 text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                         title="Move section down"
                       >
                         <ArrowDown className="h-4 w-4" />
@@ -2297,12 +2319,23 @@ const ReportBuilder: React.FC<ReportBuilderProps> = ({ initialData, reportId, on
                       {sections.length > 1 && (
                         <button
                           onClick={() => removeSection(section.id)}
-                          className="p-1.5 sm:p-2 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                          className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                           title="Remove section"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
                       )}
+                      <div className="flex items-center ml-2">
+                        <label className="text-xs text-gray-500 dark:text-gray-400 mr-2">
+                          Start on new page:
+                        </label>
+                        <input
+                          type="checkbox"
+                          checked={section.startOnNewPage || false}
+                          onChange={(e) => handleStartOnNewPageChange(section.id, e.target.checked)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </div>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-2">
                       <input
